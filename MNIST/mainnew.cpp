@@ -87,10 +87,7 @@ int main() {
     net.add<mish, int>(300);
     net.add<mish, int>(300);
     net.add<softmax, int>(10);
-    /* ifstream fin; */
-    /* fin.open("newmnist.txt", ios::in); */
-    /* fin >> net; */
-    /* fin.close(); */
+    net.read("./newmnist.txt");
 
     vector<double> labels, _labels;
     vector<vector<double>> images, _images;
@@ -99,26 +96,23 @@ int main() {
     read_Mnist_Images("./train-images.idx3-ubyte", images);
     read_Mnist_Images("./t10k-images.idx3-ubyte", _images);
 
-    int cnt = 0;
+    double cnt = 0;
     for (int i = 0; i < _images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
         test_data.push_back({std2eigen(pool(_images[i])), std2eigen(out)});
-        /* net.forward(std2eigen(pool(_images[i]))); */
-        /* cnt += net.chk(std2eigen(out)); */
+		cnt -= chk(net.forward(std2eigen(pool(_images[i]))),std2eigen(out));
     };
-    /* cout << cnt << endl; */
+    cout << cnt/_images.size() << endl;
     for (int i = 0; i < images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
         train_data.push_back({std2eigen(pool(images[i])), std2eigen(out)});
     }
 
-    net.sgd(
-        train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3);
-    ofstream fout;
-    fout.open("newmnist.txt", ios::out);
-    fout << net;
-    fout.close();
+    /* net.sgd( */
+    /*     train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3); */
+    net.adam(train_data, test_data, 8, 50000, 5000, chk,"./newmnist.txt"); 
+    /* net.write("newmnist.txt"); */
     return 0;
 }

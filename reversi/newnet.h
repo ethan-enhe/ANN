@@ -1,9 +1,6 @@
 #ifndef NET_H
 #define NET_H
 #include <math.h>
-
-#include <cmath>
-#include <functional>
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
@@ -24,32 +21,6 @@ VectorXd std2eigen(const vector<double>& x) {
     res.resize(x.size());
     for (int i = 0; i < (int)x.size(); i++) res(i) = x[i];
     return res;
-}
-//方差
-double variance(const VectorXd& output, const VectorXd& ans) {
-    const auto square = [](double x) { return x * x; };
-    double res = 0;
-    for (int i = 0; i < ans.rows(); i++) res += square(output(i) - ans(i));
-    return std::sqrt(res / ans.rows());
-}
-//分k类，交叉熵
-double crossentropy_k(const VectorXd& output, const VectorXd& ans) {
-    double res = 0;
-    for (int i = 0; i < ans.rows(); i++) res -= ans(i) * std::log(output(i));
-    return res;
-}
-//分2类，交叉熵
-double crossentropy(const VectorXd& output, const VectorXd& ans) {
-    double res = 0;
-    for (int i = 0; i < ans.rows(); i++) res -= ans(i) * std::log(output(i)) + (1. - ans(i)) * std::log(1. - output(i));
-    return res;
-}
-//分k类，正确率
-double chk(const VectorXd& output, const VectorXd& ans) {
-    int mx = 0;
-    for (int i = 0; i < ans.rows(); i++)
-        if (output(i) > output(mx)) mx = i;
-    return -(ans[mx] > 0.6);
 }
 
 //权系数矩阵，包括偏移，封装了一下，便于实现adam
@@ -251,9 +222,38 @@ struct ANN {
         }
         return layers.front()->GA;
     }
+    //方差
+    double variance(const VectorXd& output) {
+        auto square = [](double x) { return x * x; };
+        double ans = 0;
+        for (int i = 0; i < output.rows(); i++) ans += square(layers.back()->Z(i) - output(i));
+
+        assert(!isnan(std::sqrt(ans / output.rows())));
+        return std::sqrt(ans / output.rows());
+    }
+    //分k类，交叉熵
+    double crossentropy_k(const VectorXd& output) {
+        double ans = 0;
+        for (int i = 0; i < output.rows(); i++) ans -= output(i) * std::log(layers.back()->Z(i));
+        return ans;
+    }
+    //分2类，交叉熵
+    double crossentropy(const VectorXd& output) {
+        double ans = 0;
+        for (int i = 0; i < output.rows(); i++)
+            ans -= output(i) * std::log(layers.back()->Z(i)) + (1. - output(i)) * std::log(1. - layers.back()->Z(i));
+        return ans;
+    }
+    //分k类，正确率
+    double chk(const VectorXd& output) {
+        int mx = 0;
+        for (int i = 0; i < output.rows(); i++)
+            if (layers.back()->Z(i) > layers.back()->Z(mx)) mx = i;
+        return output[mx] > 0.6;
+    }
     //小批量sgd
     void sgd(const dataset& train, const dataset& test, int batch, int tottime, int prttime,
-             const function<double(int)>& ratefunc, const function<double(const VectorXd&, const VectorXd&)> errfunc) {
+             const function<double(double)>& rate, int errtype = 0) {
         assert(!train.empty());
         assert(!test.empty());
         for (int t = 1; t <= tottime; t++) {
@@ -263,23 +263,30 @@ struct ANN {
                 forward(train[id].first);
                 backward(train[id].second);
             }
-            double r = ratefunc(t);
+            double r = rate(t);
             for (int i = 1; i < (int)layers.size(); i++) layers[i]->W -= layers[i]->GW * r;
 
             if (t % prttime == 0) {
                 double sum = 0;
                 for (int i = 0; i < (int)test.size(); i++) {
                     forward(test[i].first);
-                    sum += errfunc(layers.back()->Z, test[i].second);
+                    /* switch (errtype) { */
+                    /*     case 0: sum += variance(test[i].second); */
+                    /*     case 1: sum += crossentropy(test[i].second); */
+                    /*     case 2: sum += crossentropy_k(test[i].second); */
+                    /*     case 3: sum += chk(test[i].second); */
+                    /* } */
+                    sum += variance(test[i].second);
+                    assert(!isnan(sum));
                 }
-                cerr << "Training progress: " << (double)t / tottime * 100 << "%" << endl;
-                cerr << "Accuracy: " << abs(sum) / test.size() << endl;
+                cerr << "Training progress: " << (double)t / tottime * 100 << "% Accuracy: " << sum << " "
+                     << test.size() << endl;
             }
         }
     }
-    // adam
-    void adam(const dataset& train, const dataset& test, int batch, int tottime, int prttime,
-              const function<double(const VectorXd&, const VectorXd&)> errfunc, string prtf = "") {
+    //小批量sgd
+    void adam(const dataset& train, const dataset& test, int batch, int tottime, int prttime, int errtype = 0,
+              string prtf = "") {
         //学习率
         const double lrate = 0.001;
         //衰减率
@@ -311,10 +318,15 @@ struct ANN {
                 double sum = 0;
                 for (int i = 0; i < (int)test.size(); i++) {
                     forward(test[i].first);
-                    sum += errfunc(layers.back()->Z, test[i].second);
+                    switch (errtype) {
+                        case 0: sum += variance(test[i].second);
+                        case 1: sum += crossentropy(test[i].second);
+                        case 2: sum += crossentropy_k(test[i].second);
+                        case 3: sum += chk(test[i].second);
+                    }
                 }
                 cerr << "Training progress: " << (double)t / tottime * 100 << "%" << endl;
-                cerr << "Accuracy: " << abs(sum) / test.size() << endl;
+                cerr << "Accuracy: " << sum << " " << test.size() << endl;
                 if (sum / test.size() < mnerr) {
                     mnerr = sum / test.size();
                     if (prtf != "") write(prtf);
