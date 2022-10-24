@@ -1,9 +1,6 @@
 #ifndef NET_H
 #define NET_H
-#include <math.h>
 
-#include <cmath>
-#include <functional>
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
