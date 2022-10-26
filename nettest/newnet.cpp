@@ -24,15 +24,15 @@ int main() {
         else
             train.push_back({in, out});
     }
-    FCN.adam(train, test, 8, 100000, 10000,crossentropy);
-    //FCN.sgd(train, test, 8, 100000, 10000, [](int x) { return 1. /8./ (1. + x * 0.005); },crossentropy); 
-    while (1) {
-        double x, y;
-        cin >> x >> y;
-        VectorXd in(2), out(1);
-        in << x, y;
-        out = FCN.forward(in);
-        cout << out << endl;
-    }
+    /* FCN.adam(train, test, 32, 100000, 10000,crossentropy); */
+    FCN.sgd(train, test, 32, 100001, 10000, [](int x) { return 1. /32./ (1. + x * 0.005); },variance);
+    /* while (1) { */
+    /*     double x, y; */
+    /*     cin >> x >> y; */
+    /*     VectorXd in(2), out(1); */
+    /*     in << x, y; */
+    /*     out = FCN.forward(in); */
+    /*     cout << out << endl; */
+    /* } */
     return 0;
 }

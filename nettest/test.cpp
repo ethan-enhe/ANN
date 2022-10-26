@@ -14,7 +14,7 @@ int main() {
     cout << net.shape();
     vec_batch in, out, ans, grad;
     in = {
-        make_vec({1, 0}),
+        make_vec({1, 1}),
         /* make_vec({0, 1}), */
         /* make_vec({1, 1}), */
         /* make_vec({0, 0}), */
@@ -25,18 +25,14 @@ int main() {
         /* make_vec({0}), */
         /* make_vec({0}), */
     };
-    out=net.forward(in);
-    cout<<net.backward(ans)[0]<<endl;
-    cout<<crossentropy_2(out, ans)<<endl;
-    in = {
-        make_vec({1, -0.1}),
-        /* make_vec({0, 1}), */
-        /* make_vec({1, 1}), */
-        /* make_vec({0, 0}), */
-    };
-    out=net.forward(in);
-    cout<<crossentropy_2(out, ans)<<endl;
+    out = net.forward(in);
+    net.backward(ans);
+    cout << crossentropy_2(out, ans) << endl;
+    cout << ((linear*)net.layers[1].get())->grad_bias << endl << endl;
 
+    ((linear*)net.layers[1].get())->bias(1) += 0.1;
+    out = net.forward(in);
+    cout << crossentropy_2(out, ans) << endl;
 
     /* for (int i = 0; i <= 100000; i++) { */
     /*     out = net.forward(in); */

@@ -3,15 +3,63 @@
 
 #include <bits/stdc++.h>
 
-#include <algorithm>
-#include <vector>
+#include <ctime>
 
-#include "../include/tools.h"
+#include "../Eigen/Dense"
 
+using namespace Eigen;
+using namespace std;
+
+using vec = VectorXd;
+using mat = MatrixXd;
+using vec_batch = vector<vec>;
+using batch = pair<vec_batch, vec_batch>;
+const double INF = 1e6;
+
+//{{{ Random
+std::mt19937_64 mr(std::chrono::system_clock::now().time_since_epoch().count());
+double rd(double l, double r) { return std::uniform_real_distribution<double>(l, r)(mr); }
+double nd(double l, double r) { return std::normal_distribution<double>(l, r)(mr); }
+int ri(int l, int r) { return std::uniform_int_distribution<int>(l, r)(mr); }
+//}}}
+//{{{ Utils
+vec make_vec(const vector<double> &x) {
+    VectorXd res;
+    res.resize(x.size());
+    for (int i = 0; i < (int)x.size(); i++) res(i) = x[i];
+    return res;
+}
+//}}}
+//{{{ Error func
+double variance(const vec_batch &out, const vec_batch &label) {
+    auto square = [](double x) { return x * x; };
+    const int batch_sz = out.size();
+    double res = 0;
+    for (int i = 0; i < batch_sz; i++)
+        for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
+
+    return sqrt(res / batch_sz / out[0].rows());
+}
+//分2类，交叉熵
+double crossentropy_2(const vec_batch &out, const vec_batch &label) {
+    const int batch_sz = out.size();
+    double res = 0;
+    for (int i = 0; i < batch_sz; i++)
+        for (int j = 0; j < out[i].rows(); j++) {
+            if (out[i][j] == 1)
+                res += INF * (1. - label[i](j));
+            else if (out[i][j] == 0)
+                res += INF * label[i](j);
+            else
+
+                res -= label[i](j) * log(out[i](j)) + (1. - label[i](j)) * log(1. - out[i](j));
+        }
+    return res;
+}
+//}}}
+//{{{ Layer
 struct layer;
 using layerp = shared_ptr<layer>;
-
-bool train_mode = 0;
 
 //一层神经元的基类
 struct layer {
@@ -23,13 +71,13 @@ struct layer {
     layer(const string &name) : name(name), batch_sz(0), train_mode(1) {}
 
     //更改batch-size 和 trainmode 选项
-    virtual void _attri(const int &, const bool &){};
-    void attri(const int &new_batch_sz, const bool &new_train_mod) {
+    void set_train_mod(const bool &new_train_mod) { train_mode = new_train_mod; }
+    virtual void _resize(const int &){};
+    void resize(const int &new_batch_sz) {
         batch_sz = new_batch_sz;
-        train_mode = new_train_mod;
         out.resize(batch_sz);
         grad.resize(batch_sz);
-        _attri(batch_sz, train_mode);
+        _resize(batch_sz);
     }
     //把输入向量运算后放到Z里
     virtual void forward(const vec_batch &in) {}
@@ -68,6 +116,8 @@ struct linear : public layer {
         }
     }
     void update(double rate) {
+        /* cout<<name<<" "<<endl; */
+        /* cout<<grad_bias; */
         bias -= rate * grad_bias;
         weight -= rate * grad_weight;
     }
@@ -120,7 +170,8 @@ struct same : public layer {
         for (int i = 0; i < batch_sz; i++) grad[i] = nxt_grad[i];
     }
 };
-
+//}}}
+//{{{ Layers Sequnce
 struct layer_seq {
     int batch_sz;
     vector<layerp> layers;
@@ -139,7 +190,7 @@ struct layer_seq {
     vec_batch forward(const vec_batch &input) {
         if ((int)input.size() != batch_sz) {
             batch_sz = input.size();
-            for (auto &l : layers) l->attri(batch_sz, l->train_mode);
+            for (auto &l : layers) l->resize(batch_sz);
         }
         int layer_sz = layers.size();
         layers[0]->forward(input);
@@ -157,15 +208,75 @@ struct layer_seq {
         int layer_sz = layers.size();
         for (int i = 0; i < layer_sz; i++) layers[i]->update(rate);
     }
-};
-
-using batch = pair<vec_batch, vec_batch>;
-
-struct data_set {
-    vec_batch train, valid, test;
-    data_set(const batch &all_data,int valid_num,int test_num) {
-
+    void train(const batch &data, const double &rate) {
+        forward(data.first);
+        backward(data.second);
+        upd(rate);
     }
 };
+//}}}
+//{{{ Dataset
+struct data_set {
+    batch train, valid, test;
+    data_set(const batch &all_data) {
+        for (int i = 0; i < (int)all_data.first.size(); i++) {
+            int rnd = ri(0, 10);
+            if (rnd == 0) {
+                test.first.push_back(all_data.first[i]);
+                test.second.push_back(all_data.second[i]);
+            } else if (rnd == 1) {
+                valid.first.push_back(all_data.first[i]);
+                valid.second.push_back(all_data.second[i]);
+            } else {
+                train.first.push_back(all_data.first[i]);
+                train.second.push_back(all_data.second[i]);
+            }
+        }
+    }
+    batch get_train_batch(const int &batch_sz) const {
+        assert(train.first.size());
+        batch res;
+        for (int i = 0; i < batch_sz; i++) {
+            int id = ri(0, train.first.size() - 1);
+            res.first.push_back(train.first[id]);
+            res.second.push_back(train.second[id]);
+        }
+        return res;
+    }
+    batch get_valid_batch(const int &batch_sz) const {
+        assert(valid.first.size());
+        batch res;
+        for (int i = 0; i < batch_sz; i++) {
+            int id = ri(0, valid.first.size() - 1);
+            res.first.push_back(valid.first[id]);
+            res.second.push_back(valid.second[id]);
+        }
+        return res;
+    }
+};
+//}}}
+//{{{ Trainning
+
+void sgd(const data_set &data, layer_seq &net, const int batch_sz, const int epoch, function<double(int)> lr_func,
+         function<double(const vec_batch &, const vec_batch &)> err_func) {
+    int t0 = clock();
+    for (int i = 1; i <= epoch; i++) {
+        net.train(data.get_train_batch(batch_sz), lr_func(i));
+        if (i % 5000 == 0) {
+            for (auto &l : net.layers) l->set_train_mod(0);
+            double sum = 0;
+            for (int j = 0; j < data.valid.first.size(); j++) {
+                batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
+                sum += err_func(net.forward(tmp.first), tmp.second);
+            }
+            cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
+            cerr << "Epoch: " << i << endl;
+            cerr << "Error: " << sum / 1000 << endl;
+            for (auto &l : net.layers) l->set_train_mod(1);
+        }
+    }
+}
+
+//}}}
 
 #endif
