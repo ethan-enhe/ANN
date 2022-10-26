@@ -306,12 +306,17 @@ struct ANN {
             }
             if (t % prttime == 0) {
                 double sum = 0;
+				//double suml0=0,suml1=0,suml2=0;
                 for (int i = 0; i < (int)test.size(); i++) {
                     forward(test[i].first);
                     sum += errfunc(layers.back()->Z, test[i].second);
+					//suml0+=layers[1]->Z.mean();
+					//suml1+=layers[1]->Z.mean();
+					//suml2+=layers[2]->Z.mean();
                 }
                 cerr << "Training progress: " << (double)t / tottime * 100 << "%" << endl;
                 cerr << "Accuracy: " << abs(sum) / test.size() << endl;
+				//cerr<<suml0/test.size()<<" "<<suml1/test.size()<<" "<<suml2/test.size()<<endl;
                 if (sum / test.size() < mnerr) {
                     mnerr = sum / test.size();
                     if (prtf != "") write(prtf);

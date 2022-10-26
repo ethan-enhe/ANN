@@ -84,10 +84,15 @@ ANN net;
 dataset train_data, test_data;
 int main() {
     net.add<same, int>(196);
-    net.add<mish, int>(300);
-    net.add<mish, int>(300);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
+    net.add<swish, int>(128);
     net.add<softmax, int>(10);
-    net.read("./newmnist.txt");
+    /* net.read("./newmnist.txt"); */
 
     vector<double> labels, _labels;
     vector<vector<double>> images, _images;
@@ -112,7 +117,7 @@ int main() {
 
     /* net.sgd( */
     /*     train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3); */
-    net.adam(train_data, test_data, 8, 50000, 5000, chk,"./newmnist.txt"); 
+    net.adam(train_data, test_data, 64, 500000, 1000, chk,"./newmnist.txt");
     /* net.write("newmnist.txt"); */
     return 0;
 }

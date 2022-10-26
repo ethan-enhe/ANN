@@ -51,7 +51,7 @@ int main() {
                     }
             if (!canput) last = -last;
             b.putchess(xc, yc, last);
-            if (data.size() - ind <= 10 && ri(0, 10) == 0) {
+            if (data.size() - ind <5 && ri(0, 10) == 0) {
                 VectorXd in = std2eigen(b.vectorize(1)), out(1), _out(1);
                 out << (delt > 0 ? 1 : (delt < 0 ? 0 : 0.5));
                 _out << (delt > 0 ? 0 : (delt < 0 ? 1 : 0.5));
@@ -69,6 +69,8 @@ int main() {
     fin.close();
 
     net.add<same, int>(64);
+    net.add<hardswish, int>(200);
+    net.add<hardswish, int>(200);
     net.add<hardswish, int>(200);
     net.add<hardswish, int>(200);
     net.add<hardswish, int>(200);
