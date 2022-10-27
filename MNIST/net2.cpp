@@ -89,17 +89,14 @@ int main() {
     /* x=(mat)x.array() + x; */
     /* cout<<x.array().inverse(); */
     net.add(make_shared<linear>(14 * 14, 128));
-    net.add(make_shared<batchnorm>(128));
     net.add(make_shared<hardswish>());
+    net.add(make_shared<batchnorm>(128));
     net.add(make_shared<linear>(128, 128));
-    net.add(make_shared<batchnorm>(128));
     net.add(make_shared<hardswish>());
+    net.add(make_shared<batchnorm>(128));
     net.add(make_shared<linear>(128, 128));
-    net.add(make_shared<batchnorm>(128));
     net.add(make_shared<hardswish>());
-    net.add(make_shared<linear>(128, 128));
     net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<hardswish>());
     net.add(make_shared<linear>(128, 10));
     net.add(make_shared<softmax>());
     cout << net.shape();
@@ -128,7 +125,7 @@ int main() {
         data.train.second.push_back(make_vec(out));
     }
     sgd(
-        data, net, 32, 50000, [](int x) { return 1. / 8 / (1. + x * 0.005); }, chk_k);
+        data, net, 1024, 50000, [](int x) { return 1./1024  / 10; }, chk_k);
 
     /* net.sgd( */
     /*     train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3); */

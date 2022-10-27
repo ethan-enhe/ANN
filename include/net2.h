@@ -357,7 +357,7 @@ void sgd(const data_set &data, layer_seq &net, const int &batch_sz, const int &e
     int t0 = clock();
     for (int i = 1; i <= epoch; i++) {
         net.train(data.get_train_batch(batch_sz), lr_func(i));
-        if (i % 5000 == 0) {
+        if (i % 50 == 0) {
             net.set_train_mod(0);
             double sum = 0;
             for (int j = 0; j < (int)data.valid.first.size(); j++) {
