@@ -145,11 +145,11 @@ struct sigmoid : public layer {
 struct th : public layer {
     th() : layer("tanh") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return tanh(x); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return 1. / (exp(-x) + 1); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return 1. - x * x; }));
+            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return x * (1. - x); }));
     }
 };
 struct relu : public layer {

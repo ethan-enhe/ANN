@@ -3,7 +3,7 @@
 
 #include <bits/stdc++.h>
 
-#include "../Eigen/Core"
+#include "../Eigen/Dense"
 
 using namespace Eigen;
 using namespace std;
@@ -142,16 +142,6 @@ struct sigmoid : public layer {
             grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return x * (1. - x); }));
     }
 };
-struct th : public layer {
-    th() : layer("tanh") {}
-    void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return tanh(x); });
-    }
-    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
-        for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return 1. - x * x; }));
-    }
-};
 struct relu : public layer {
     relu() : layer("relu") {}
     void forward(const vec_batch &in) {
@@ -212,7 +202,8 @@ struct batchnorm : public layer {
         , grad_gama(sz)
         , grad_beta(sz) {
         gama.setOnes();
-        beta.setZero();
+        beta.setOnes();
+
     }
     void forward(const vec_batch &in) {
         if (train_mode) {
