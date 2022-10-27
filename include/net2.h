@@ -194,58 +194,70 @@ struct softmax : public layer {
     void backward(const vec_batch &in, const vec_batch &nxt_grad) { assert(0); }
 };
 struct batchnorm : public layer {
+    const double momentum = 0.9;
     //平均值，1/sqrt(方差+eps)
-    vec avg, inv_var;
+    vec mean, inv_var;
     vec gama, beta;
     //这两个用来辅助
-    vec grad_normalized_x, grad_avg, grad_var;
+    vec grad_normalized_x, grad_mean, grad_var;
     //这两个是要拿来更新系数的
     vec grad_gama, grad_beta;
+    //运行中统计平均和方差
+    vec running_mean, running_var;
     batchnorm(const int &sz)
         : layer("batchnorm " + to_string(sz))
-        , avg(sz)
+        , mean(sz)
         , inv_var(sz)
         , gama(sz)
         , beta(sz)
-        , grad_avg(sz)
+        , grad_mean(sz)
         , grad_var(sz)
         , grad_gama(sz)
-        , grad_beta(sz) {
+        , grad_beta(sz)
+        , running_mean(sz)
+        , running_var(sz) {
         gama.setOnes();
         beta.setZero();
     }
     void forward(const vec_batch &in) {
         if (train_mode) {
-            avg.setZero();
+            mean.setZero();
             inv_var.setZero();
-            for (int i = 0; i < batch_sz; i++) avg += in[i];
-            avg /= batch_sz;
-            for (int i = 0; i < batch_sz; i++) inv_var += (in[i] - avg).cwiseAbs2();
-            inv_var = ((inv_var / batch_sz).array() + EPS).cwiseSqrt().cwiseInverse();
+            for (int i = 0; i < batch_sz; i++) mean += in[i];
+            mean /= batch_sz;
+            for (int i = 0; i < batch_sz; i++) inv_var += (in[i] - mean).cwiseAbs2();
+            inv_var /= batch_sz;
+            running_mean = running_mean * momentum + mean * (1 - momentum);
+            running_var = running_var * momentum + inv_var * (1 - momentum);
+
+            inv_var = (inv_var.array() + EPS).cwiseSqrt().cwiseInverse();
+            for (int i = 0; i < batch_sz; i++)
+                out[i] = ((in[i] - mean).cwiseProduct(inv_var)).cwiseProduct(gama) + beta;
+        } else {
+            for (int i = 0; i < batch_sz; i++)
+                out[i] =
+                    ((in[i] - running_mean).cwiseProduct((vec)(running_var.array() + EPS).cwiseSqrt().cwiseInverse()))
+                        .cwiseProduct(gama) +
+                    beta;
         }
-        for (int i = 0; i < batch_sz; i++) out[i] = ((in[i] - avg).cwiseProduct(inv_var)).cwiseProduct(gama) + beta;
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         grad_gama.setZero();
         grad_beta.setZero();
-        grad_avg.setZero();
+        grad_mean.setZero();
         grad_var.setZero();
         for (int i = 0; i < batch_sz; i++) {
             grad_normalized_x = nxt_grad[i].cwiseProduct(gama);
-            grad_var += grad_normalized_x.cwiseProduct(in[i] - avg);
-            grad_avg += grad_normalized_x;
+            grad_var += grad_normalized_x.cwiseProduct(in[i] - mean);
+            grad_mean += grad_normalized_x;
             grad[i] = grad_normalized_x.cwiseProduct(inv_var);
 
             grad_beta += nxt_grad[i];
-            grad_gama += nxt_grad[i].cwiseProduct((in[i] - avg).cwiseProduct(inv_var));
+            grad_gama += nxt_grad[i].cwiseProduct((in[i] - mean).cwiseProduct(inv_var));
         }
-        /* cout << inv_var << endl; */
-        /* cout << (vec)(inv_var.array().pow(3)) << endl; */
         grad_var = -0.5 * grad_var.cwiseProduct((vec)(inv_var.array().pow(3)));
-        grad_avg = -grad_avg.cwiseProduct(inv_var);
-        for (int i = 0; i < batch_sz; i++) grad[i] += (grad_avg + 2 * grad_var.cwiseProduct(in[i] - avg)) / batch_sz;
-        /* cout << "grad_beta:\n" << grad_avg << endl; */
-        /* avg(0) += 0.001; */
+        grad_mean = -grad_mean.cwiseProduct(inv_var);
+        for (int i = 0; i < batch_sz; i++) grad[i] += (grad_mean + 2 * grad_var.cwiseProduct(in[i] - mean)) / batch_sz;
     }
     void update_with_grad(double rate) {
         grad_beta -= rate * grad_beta;

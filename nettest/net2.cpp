@@ -32,7 +32,7 @@ int main() {
     data_set sliced_data(data);
     sgd(
 
-        sliced_data, FCN, 64, 100000, [](int x) { return 1. / 64. / (1. + x * 0.005); }, crossentropy_k);
+        sliced_data, FCN, 64, 100000, [](int x) { return 1. / 64. / (1. + x * 0.005); }, chk_k);
 
     FCN.set_train_mod(0);
     while (1) {
