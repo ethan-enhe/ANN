@@ -3,7 +3,7 @@
 
 ## Features
 
-- 除了依赖的 Eigen 矩阵运算库以外，只包含一个头文件
+- 除了依赖的 Eigen 矩阵运算库以外，只包含一个头文件 `net2.h`
 - 接口简单，易于使用
 - 实现了 线性层，BN层，sigmoid，relu，hardswish，softmax 等多种神经网络层
 - 支持 mini-batch 和 adam 训练
