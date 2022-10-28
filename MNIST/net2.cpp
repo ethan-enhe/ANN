@@ -84,6 +84,7 @@ vector<double> pool(const vector<double>& x) {
 layer_seq net;
 data_set data;
 int main() {
+    cout << Eigen::nbThreads() << endl;
     /* mat x(2, 2); */
     /* x << 1, 2, 3, 4; */
     /* x=(mat)x.array() + x; */
@@ -91,13 +92,15 @@ int main() {
     net.add(make_shared<linear>(14 * 14, 128));
     net.add(make_shared<hardswish>());
     net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 128));
+    net.add(make_shared<linear>(128, 64));
+
     net.add(make_shared<hardswish>());
-    net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 128));
+    net.add(make_shared<batchnorm>(64));
+    net.add(make_shared<linear>(64, 64));
+
     net.add(make_shared<hardswish>());
-    net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 10));
+    net.add(make_shared<linear>(64, 10));
+
     net.add(make_shared<softmax>());
     cout << net.shape();
     /* net.read("./newmnist.txt"); */
@@ -124,8 +127,9 @@ int main() {
         data.train.first.push_back(make_vec(pool(images[i])));
         data.train.second.push_back(make_vec(out));
     }
-    sgd(
-        data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k);
+    /* sgd( */
+    /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
+    adam(data, net, 128, 50000, chk_k);
 
     /* net.sgd( */
     /*     train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3); */

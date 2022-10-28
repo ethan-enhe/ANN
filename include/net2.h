@@ -2,6 +2,11 @@
 #define NET_H
 
 #include <bits/stdc++.h>
+#include <math.h>
+
+#include <cmath>
+#include <functional>
+#include <random>
 
 #include "../Eigen/Core"
 
@@ -14,6 +19,7 @@ using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
 const double INF = 1e8;
 const double EPS = 1e-8;
+const double adam_lr = 0.001, adam_rho1 = 0.9, adam_rho2 = 0.999;
 
 //{{{ Random
 std::mt19937_64 mr(std::chrono::system_clock::now().time_since_epoch().count());
@@ -81,9 +87,9 @@ struct layer {
     layer(const string &name) : name(name), batch_sz(0), train_mode(1) {}
 
     //更改batch-size 和 trainmode 选项
-    void set_train_mod(const bool &new_train_mod) { train_mode = new_train_mod; }
-    virtual void _resize(const int &){};
-    void resize(const int &new_batch_sz) {
+    void set_train_mode(const bool &new_train_mode) { train_mode = new_train_mode; }
+    virtual void _resize(int){};
+    void resize(int new_batch_sz) {
         if (batch_sz != new_batch_sz) {
             batch_sz = new_batch_sz;
             out.resize(batch_sz);
@@ -96,21 +102,31 @@ struct layer {
     //根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
     virtual void backward(const vec_batch &, const vec_batch &) = 0;
     //以 rate 学习率梯度下降
-    virtual void update_with_grad(double){};
+    virtual void sgd(double){};
+    virtual void adam(int){};
 };
 
 struct linear : public layer {
     const int in_sz, out_sz;
-    mat weight, grad_weight;
-    vec bias, grad_bias;
-    linear(const int &in_sz, const int &out_sz)
+    // 系数，系数梯度，一阶累积量，二阶累积量
+    mat weight, grad_weight, s_weight, r_weight;
+    vec bias, grad_bias, s_bias, r_bias;
+    linear(int in_sz, int out_sz)
         : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
         , in_sz(in_sz)
         , out_sz(out_sz)
         , weight(out_sz, in_sz)
         , grad_weight(out_sz, in_sz)
+        , s_weight(out_sz, in_sz)
+        , r_weight(out_sz, in_sz)
         , bias(out_sz)
-        , grad_bias(out_sz) {
+        , grad_bias(out_sz)
+        , s_bias(out_sz)
+        , r_bias(out_sz) {
+        s_weight.setZero();
+        r_weight.setZero();
+        s_bias.setZero();
+        r_bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
     void forward(const vec_batch &in) {
@@ -127,7 +143,18 @@ struct linear : public layer {
             grad[i] = weight.transpose() * nxt_grad[i];
         }
     }
-    void update_with_grad(double rate) {
+    void adam(int t) {
+        double inv1 = 1. / (1. - pow(adam_rho1, t));
+        double inv2 = 1. / (1. - pow(adam_rho2, t));
+        s_weight = adam_rho1 * s_weight + (1. - adam_rho1) * grad_weight;
+        r_weight = adam_rho2 * r_weight + (1. - adam_rho2) * grad_weight.cwiseAbs2();
+        weight.array() -= inv1 * adam_lr * s_weight.array() / (sqrt(inv2 * r_weight.array()) + EPS);
+
+        s_bias = adam_rho1 * s_bias + (1. - adam_rho1) * grad_bias;
+        r_bias = adam_rho2 * r_bias + (1. - adam_rho2) * grad_bias.cwiseAbs2();
+        bias.array() -= inv1 * adam_lr * s_bias.array() / (sqrt(inv2 * r_bias.array()) + EPS);
+    }
+    void sgd(double rate) {
         bias -= rate * grad_bias;
         weight -= rate * grad_weight;
     }
@@ -194,51 +221,57 @@ struct softmax : public layer {
     void backward(const vec_batch &in, const vec_batch &nxt_grad) { assert(0); }
 };
 struct batchnorm : public layer {
-    const double momentum = 0.9;
-    //平均值，1/sqrt(方差+eps)
-    vec mean, inv_var;
-    vec gama, beta;
-    //这两个用来辅助
-    vec grad_normalized_x, grad_mean, grad_var;
-    //这两个是要拿来更新系数的
-    vec grad_gama, grad_beta;
-    //运行中统计平均和方差
-    vec running_mean, running_var;
-    batchnorm(const int &sz)
-        : layer("batchnorm " + to_string(sz))
+    //平均值，方差
+    vec mean, running_mean, grad_mean;
+    vec var, running_var, grad_var, inv_var;
+    vec gama, grad_gama, s_gama, r_gama;
+    vec beta, grad_beta, s_beta, r_beta;
+    //这两个用来辅助,inv记录1/sqrt(方差+eps)
+    vec grad_normalized_x;
+    const double momentum;
+    batchnorm(int sz, double momentum = 0.9)
+        : layer("batchnorm_sgd " + to_string(sz))
         , mean(sz)
+        , running_mean(sz)
+        , grad_mean(sz)
+        , var(sz)
+        , running_var(sz)
+        , grad_var(sz)
         , inv_var(sz)
         , gama(sz)
-        , beta(sz)
-        , grad_mean(sz)
-        , grad_var(sz)
         , grad_gama(sz)
+        , s_gama(sz)
+        , r_gama(sz)
+        , beta(sz)
         , grad_beta(sz)
-        , running_mean(sz)
-        , running_var(sz) {
+        , s_beta(sz)
+        , r_beta(sz)
+        , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
+        s_gama.setZero();
+        r_gama.setZero();
+        s_beta.setZero();
+        r_beta.setZero();
     }
     void forward(const vec_batch &in) {
         if (train_mode) {
             mean.setZero();
-            inv_var.setZero();
+            var.setZero();
             for (int i = 0; i < batch_sz; i++) mean += in[i];
             mean /= batch_sz;
-            for (int i = 0; i < batch_sz; i++) inv_var += (in[i] - mean).cwiseAbs2();
-            inv_var /= batch_sz;
+            for (int i = 0; i < batch_sz; i++) var += (in[i] - mean).cwiseAbs2();
+            var /= batch_sz;
+            inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
-            running_var = running_var * momentum + inv_var * (1 - momentum);
+            running_var = running_var * momentum + var * (1 - momentum);
 
-            inv_var = (inv_var.array() + EPS).cwiseSqrt().cwiseInverse();
             for (int i = 0; i < batch_sz; i++)
-                out[i] = ((in[i] - mean).cwiseProduct(inv_var)).cwiseProduct(gama) + beta;
+                out[i] = (in[i] - mean).array() * inv_var.array() * gama.array() + beta.array();
         } else {
             for (int i = 0; i < batch_sz; i++)
                 out[i] =
-                    ((in[i] - running_mean).cwiseProduct((vec)(running_var.array() + EPS).cwiseSqrt().cwiseInverse()))
-                        .cwiseProduct(gama) +
-                    beta;
+                    (in[i] - running_mean).array() * rsqrt(running_var.array() + EPS) * gama.array() + beta.array();
         }
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
@@ -247,21 +280,35 @@ struct batchnorm : public layer {
         grad_mean.setZero();
         grad_var.setZero();
         for (int i = 0; i < batch_sz; i++) {
-            grad_normalized_x = nxt_grad[i].cwiseProduct(gama);
-            grad_var += grad_normalized_x.cwiseProduct(in[i] - mean);
-            grad_mean += grad_normalized_x;
-            grad[i] = grad_normalized_x.cwiseProduct(inv_var);
+            grad_normalized_x = nxt_grad[i].array() * gama.array();
 
-            grad_beta += nxt_grad[i];
-            grad_gama += nxt_grad[i].cwiseProduct((in[i] - mean).cwiseProduct(inv_var));
+            grad_var.array() += grad_normalized_x.array() * (in[i] - mean).array();
+            grad_mean.array() += grad_normalized_x.array();
+
+            grad[i] = grad_normalized_x.array() * inv_var.array();
+
+            grad_beta.array() += nxt_grad[i].array();
+            grad_gama.array() += nxt_grad[i].array() * (in[i] - mean).array() * inv_var.array();
         }
-        grad_var = -0.5 * grad_var.cwiseProduct((vec)(inv_var.array().pow(3)));
-        grad_mean = -grad_mean.cwiseProduct(inv_var);
-        for (int i = 0; i < batch_sz; i++) grad[i] += (grad_mean + 2 * grad_var.cwiseProduct(in[i] - mean)) / batch_sz;
+        grad_var = -0.5 * grad_var.array() * pow(inv_var.array(), 3);
+        grad_mean = -grad_mean.array() * inv_var.array();
+        for (int i = 0; i < batch_sz; i++)
+            grad[i].array() += (grad_mean.array() + 2 * grad_var.array() * (in[i] - mean).array()) / batch_sz;
     }
-    void update_with_grad(double rate) {
+    void sgd(double rate) {
         grad_beta -= rate * grad_beta;
         grad_gama -= rate * grad_gama;
+    }
+    void adam(int t) {
+        double inv1 = 1. / (1. - pow(adam_rho1, t));
+        double inv2 = 1. / (1. - pow(adam_rho2, t));
+        s_beta = adam_rho1 * s_beta + (1. - adam_rho1) * grad_beta;
+        r_beta = adam_rho2 * r_beta + (1. - adam_rho2) * grad_beta.cwiseAbs2();
+        beta.array() -= inv1 * adam_lr * s_beta.array() / (sqrt(inv2 * r_beta.array()) + EPS);
+
+        s_gama = adam_rho1 * s_gama + (1. - adam_rho1) * grad_gama;
+        r_gama = adam_rho2 * r_gama + (1. - adam_rho2) * grad_gama.cwiseAbs2();
+        gama.array() -= inv1 * adam_lr * s_gama.array() / (sqrt(inv2 * r_gama.array()) + EPS);
     }
 };
 struct same : public layer {
@@ -289,8 +336,8 @@ struct layer_seq {
         for (auto &it : layers) res += it->name + "\n";
         return res;
     }
-    void set_train_mod(const bool &new_train_mod) {
-        for (auto &l : layers) l->set_train_mod(new_train_mod);
+    void set_train_mode(const bool &new_train_mod) {
+        for (auto &l : layers) l->set_train_mode(new_train_mod);
     }
 
     vec_batch forward(const vec_batch &input) {
@@ -310,14 +357,17 @@ struct layer_seq {
             layers[i]->backward(i ? layers[i - 1]->out : vec_batch(), layers[i + 1]->grad);
         return layers[0]->grad;
     }
-    void upd(const double &rate) {
-        int layer_sz = layers.size();
-        for (int i = 0; i < layer_sz; i++) layers[i]->update_with_grad(rate);
-    }
-    void train(const batch &data, const double &rate) {
+    void sgd(const batch &data, double rate) {
         forward(data.first);
         backward(data.second);
-        upd(rate);
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->sgd(rate);
+    }
+    void adam(const batch &data, int t) {
+        forward(data.first);
+        backward(data.second);
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->adam(t);
     }
 };
 //}}}
@@ -340,7 +390,7 @@ struct data_set {
             }
         }
     }
-    batch get_train_batch(const int &batch_sz) const {
+    batch get_train_batch(int batch_sz) const {
         assert(train.first.size());
         batch res;
         for (int i = 0; i < batch_sz; i++) {
@@ -350,7 +400,7 @@ struct data_set {
         }
         return res;
     }
-    batch get_valid_batch(const int &batch_sz) const {
+    batch get_valid_batch(int batch_sz) const {
         assert(valid.first.size());
         batch res;
         for (int i = 0; i < batch_sz; i++) {
@@ -364,13 +414,13 @@ struct data_set {
 //}}}
 //{{{ Trainning
 
-void sgd(const data_set &data, layer_seq &net, const int &batch_sz, const int &epoch, function<double(int)> lr_func,
+void sgd(const data_set &data, layer_seq &net, int batch_sz, int epoch, function<double(int)> lr_func,
          function<double(const vec_batch &, const vec_batch &)> err_func) {
     int t0 = clock();
     for (int i = 1; i <= epoch; i++) {
-        net.train(data.get_train_batch(batch_sz), lr_func(i));
+        net.sgd(data.get_train_batch(batch_sz), lr_func(i));
         if (i % 50 == 0) {
-            net.set_train_mod(0);
+            net.set_train_mode(0);
             double sum = 0;
             for (int j = 0; j < (int)data.valid.first.size(); j++) {
                 batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
@@ -379,7 +429,26 @@ void sgd(const data_set &data, layer_seq &net, const int &batch_sz, const int &e
             cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
             cerr << "Error: " << sum / data.valid.first.size() << endl;
-            net.set_train_mod(1);
+            net.set_train_mode(1);
+        }
+    }
+}
+void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
+          function<double(const vec_batch &, const vec_batch &)> err_func) {
+    int t0 = clock();
+    for (int i = 1; i <= epoch; i++) {
+        net.adam(data.get_train_batch(batch_sz), i);
+        if (i % 50 == 0) {
+            net.set_train_mode(0);
+            double sum = 0;
+            for (int j = 0; j < (int)data.valid.first.size(); j++) {
+                batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
+                sum += err_func(net.forward(tmp.first), tmp.second);
+            }
+            cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
+            cerr << "Epoch: " << i << endl;
+            cerr << "Error: " << sum / data.valid.first.size() << endl;
+            net.set_train_mode(1);
         }
     }
 }

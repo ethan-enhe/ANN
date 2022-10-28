@@ -1,6 +1,8 @@
 
 #include "../include/net2.h"
 
+#include <memory>
+
 #include "../include/optimize.h"
 
 using namespace std;
@@ -9,12 +11,56 @@ int main() {
     cin.tie(0);
     layer_seq FCN;
     FCN.add(make_shared<linear>(2, 20));
-    FCN.add(make_shared<th>());
+    FCN.add(make_shared<hardswish>());
+    /* FCN.add(make_shared<batchnorm_adam>(20)); */
+
     FCN.add(make_shared<linear>(20, 20));
-    FCN.add(make_shared<th>());
+    FCN.add(make_shared<hardswish>());
+    /* FCN.add(make_shared<batchnorm>(20)); */
+
     FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    /* FCN.add(make_shared<batchnorm_adam>(20)); */
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
     FCN.add(make_shared<batchnorm>(20));
-    FCN.add(make_shared<th>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+    FCN.add(make_shared<linear>(20, 20));
+    FCN.add(make_shared<hardswish>());
+
     FCN.add(make_shared<linear>(20, 2));
     FCN.add(make_shared<softmax>());
     batch data;
@@ -30,11 +76,13 @@ int main() {
         data.second.push_back(out);
     }
     data_set sliced_data(data);
-    sgd(
+    /* sgd( */
+    /* sliced_data, FCN, 64, 10000, [](int x) { return 1. / 64. / (1. + x * 0.005); }, chk_k); */
+    adam(sliced_data, FCN, 128, 10000, crossentropy_k);
+    // 2.32 2.31 2.35
+    // 2.23 2.29 2.39
 
-        sliced_data, FCN, 64, 100000, [](int x) { return 1. / 64. / (1. + x * 0.005); }, chk_k);
-
-    FCN.set_train_mod(0);
+    FCN.set_train_mode(0);
     while (1) {
         double x, y;
         cin >> x >> y;

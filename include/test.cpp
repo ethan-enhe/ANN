@@ -5,38 +5,42 @@
 using namespace std;
 layer_seq net;
 int main() {
-    net.add(make_shared<batchnorm>(1));
-    net.add(make_shared<same>());
-    cout << net.shape();
-    vec_batch in, out, ans, grad;
-    in = {
-        make_vec({1}),
-        make_vec({0.5}),
-        make_vec({0}),
-    };
-    ans = {
-        make_vec({0}),
-        make_vec({0}),
-        make_vec({1}),
-    };
-    out = net.forward(in);
-    grad = net.backward(ans);
-    double err = variance(out, ans) * 3;
-    cout << endl << err;
-
-    /* for (auto &x : out) cout << x << endl; */
+    mat x(2, 2), y(2, 2);
+    x << 1, 2, 3, 4;
+    y << 1, 2, 3, 4;
+    cout << (x.array() / y.array());
+    /* net.add(make_shared<batchnorm>(1)); */
+    /* net.add(make_shared<same>()); */
+    /* cout << net.shape(); */
+    /* vec_batch in, out, ans, grad; */
     /* in = { */
-    /*     make_vec({1.1}), */
+    /*     make_vec({1}), */
     /*     make_vec({0.5}), */
     /*     make_vec({0}), */
     /* }; */
+    /* ans = { */
+    /*     make_vec({0}), */
+    /*     make_vec({0}), */
+    /*     make_vec({1}), */
+    /* }; */
+    /* out = net.forward(in); */
+    /* grad = net.backward(ans); */
+    /* double err = variance(out, ans) * 3; */
+    /* cout << endl << err; */
 
-    /* for (auto &x : out) cout << x << endl; */
-    net.set_train_mod(0);
+    /* /1* for (auto &x : out) cout << x << endl; *1/ */
+    /* /1* in = { *1/ */
+    /* /1*     make_vec({1.1}), *1/ */
+    /* /1*     make_vec({0.5}), *1/ */
+    /* /1*     make_vec({0}), *1/ */
+    /* /1* }; *1/ */
 
-    out = net.forward(in);
-    err = variance(out, ans) * 3;
-    cout << endl << err;
+    /* /1* for (auto &x : out) cout << x << endl; *1/ */
+    /* net.set_train_mod(0); */
+
+    /* out = net.forward(in); */
+    /* err = variance(out, ans) * 3; */
+    /* cout << endl << err; */
 
     /* cout << endl << (variance(out, ans) * 3 - err) / grad[0](0) / 0.01 << endl << endl; */
 
