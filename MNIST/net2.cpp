@@ -90,15 +90,15 @@ int main() {
     /* x=(mat)x.array() + x; */
     /* cout<<x.array().inverse(); */
     net.add(make_shared<linear>(14 * 14, 128));
-    net.add(make_shared<hardswish>());
+    net.add(make_shared<swish>());
     net.add(make_shared<batchnorm>(128));
     net.add(make_shared<linear>(128, 128));
 
-    net.add(make_shared<hardswish>());
+    net.add(make_shared<swish>());
     net.add(make_shared<batchnorm>(128));
     net.add(make_shared<linear>(128, 128));
 
-    net.add(make_shared<hardswish>());
+    net.add(make_shared<swish>());
     net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
@@ -127,9 +127,9 @@ int main() {
         data.train.first.push_back(make_vec(pool(images[i])));
         data.train.second.push_back(make_vec(out));
     }
-    /* sgd( */
-    /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
-    adam(data, net, 128, 1000, chk_k);
+    sgd(
+        data, net, 128, 50000, [](int x) { return 1. / 30 / 10; }, chk_k);
+    /* adam(data, net, 128, 100000, chk_k); */
     /* cout << ((batchnorm*)net.layers[6].get())->gama; */
     /* cout << ((batchnorm*)net.layers[6].get())->beta; */
     /* cout << ((batchnorm*)net.layers[6].get())->running_var; */

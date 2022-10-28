@@ -17,10 +17,10 @@ const double EPS = 1e-8;
 const double adam_lr = 0.001, adam_rho1 = 0.9, adam_rho2 = 0.999;
 
 //{{{ Random
-std::mt19937_64 mr(std::chrono::system_clock::now().time_since_epoch().count());
-double rd(double l, double r) { return std::uniform_real_distribution<double>(l, r)(mr); }
-double nd(double l, double r) { return std::normal_distribution<double>(l, r)(mr); }
-int ri(int l, int r) { return std::uniform_int_distribution<int>(l, r)(mr); }
+mt19937_64 mr(chrono::system_clock::now().time_since_epoch().count());
+double rd(double l, double r) { return uniform_real_distribution<double>(l, r)(mr); }
+double nd(double l, double r) { return normal_distribution<double>(l, r)(mr); }
+int ri(int l, int r) { return uniform_int_distribution<int>(l, r)(mr); }
 //}}}
 //{{{ Utils
 vec make_vec(const vector<double> &x) {
@@ -200,6 +200,35 @@ struct hardswish : public layer {
                 if (x >= 3) return 1;
                 if (x <= -3) return 0;
                 return x / 3 + 0.5;
+            }));
+    }
+};
+struct swish : public layer {
+    swish() : layer("swish") {}
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++)
+            out[i] = in[i].unaryExpr([](double x) -> double { return x / (exp(-x) + 1); });
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        for (int i = 0; i < batch_sz; i++)
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double {
+                double ex = std::exp(x);
+                return ex * (x + ex + 1) / (ex + 1) / (ex + 1);
+            }));
+    }
+};
+struct mish : public layer {
+    mish() : layer("mish") {}
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++)
+            out[i] = in[i].unaryExpr([](double x) -> double { return x * tanh(log(1 + exp(x))); });
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        for (int i = 0; i < batch_sz; i++)
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double {
+                double ex = exp(x);
+                double fm = (2 * ex + ex * ex + 2);
+                return ex * (4 * (x + 1) + 4 * ex * ex + ex * ex * ex + ex * (4 * x + 6)) / fm / fm;
             }));
     }
 };
