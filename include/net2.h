@@ -2,6 +2,7 @@
 #define NET_H
 
 #include <bits/stdc++.h>
+
 #include "../Eigen/Core"
 
 using namespace Eigen;
@@ -284,7 +285,7 @@ struct batchnorm : public layer {
             grad_beta.array() += nxt_grad[i].array();
             grad_gama.array() += nxt_grad[i].array() * (in[i] - mean).array() * inv_var.array();
         }
-        grad_var = -0.5 * grad_var.array() * pow(inv_var.array(), 3);
+        grad_var = -0.5 * grad_var.array() * inv_var.array().cube();
         grad_mean = -grad_mean.array() * inv_var.array();
         for (int i = 0; i < batch_sz; i++)
             grad[i].array() += (grad_mean.array() + 2 * grad_var.array() * (in[i] - mean).array()) / batch_sz;

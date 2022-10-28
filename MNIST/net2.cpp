@@ -92,14 +92,14 @@ int main() {
     net.add(make_shared<linear>(14 * 14, 128));
     net.add(make_shared<hardswish>());
     net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 64));
+    net.add(make_shared<linear>(128, 128));
 
     net.add(make_shared<hardswish>());
-    net.add(make_shared<batchnorm>(64));
-    net.add(make_shared<linear>(64, 64));
+    net.add(make_shared<batchnorm>(128));
+    net.add(make_shared<linear>(128, 128));
 
     net.add(make_shared<hardswish>());
-    net.add(make_shared<linear>(64, 10));
+    net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
     cout << net.shape();
@@ -129,10 +129,11 @@ int main() {
     }
     /* sgd( */
     /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
-    adam(data, net, 128, 50000, chk_k);
+    adam(data, net, 128, 1000, chk_k);
+    /* cout << ((batchnorm*)net.layers[6].get())->gama; */
+    /* cout << ((batchnorm*)net.layers[6].get())->beta; */
+    /* cout << ((batchnorm*)net.layers[6].get())->running_var; */
+    /* cout << ((batchnorm*)net.layers[6].get())->running_mean; */
 
-    /* net.sgd( */
-    /*     train_data, test_data, 8, 50000, 5000, [](int x) -> double { return 1. / 8 / (1. + x * 0.005); }, 3); */
-    /* net.write("newmnist.txt"); */
     return 0;
 }
