@@ -2,12 +2,6 @@
 #define NET_H
 
 #include <bits/stdc++.h>
-#include <math.h>
-
-#include <cmath>
-#include <functional>
-#include <random>
-
 #include "../Eigen/Core"
 
 using namespace Eigen;
