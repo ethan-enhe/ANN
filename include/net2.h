@@ -3,6 +3,8 @@
 
 #include <bits/stdc++.h>
 
+#include <algorithm>
+
 #include "../Eigen/Core"
 
 using namespace Eigen;
@@ -12,7 +14,7 @@ using vec = VectorXd;
 using mat = MatrixXd;
 using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
-const double INF = 1e8;
+const double INF = 100;
 const double EPS = 1e-8;
 const double adam_lr = 0.001, adam_rho1 = 0.9, adam_rho2 = 0.999;
 
@@ -31,6 +33,10 @@ vec make_vec(const vector<double> &x) {
 }
 //}}}
 //{{{ Error func
+double mylog(double x) {
+    if (x == 0) return -INF;
+    return log(x);
+}
 double variance(const vec_batch &out, const vec_batch &label) {
     auto square = [](double x) { return x * x; };
     const int batch_sz = out.size();
@@ -46,15 +52,16 @@ double crossentropy_2(const vec_batch &out, const vec_batch &label) {
     double res = 0;
     for (int i = 0; i < batch_sz; i++)
         for (int j = 0; j < out[i].rows(); j++)
-            res -= label[i](j) * log(out[i](j)) + (1. - label[i](j)) * log(1. - out[i](j));
-    return res;
+            res -= label[i](j) * mylog(out[i](j)) + (1. - label[i](j)) * mylog(1. - out[i](j));
+    return res / batch_sz;
 }
 double crossentropy_k(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
     double res = 0;
     for (int i = 0; i < batch_sz; i++)
-        for (int j = 0; j < out[i].rows(); j++) res -= label[i](j) * log(out[i](j));
-    return res;
+        for (int j = 0; j < out[i].rows(); j++) res -= label[i](j) * mylog(out[i](j));
+
+    return res / batch_sz;
 }
 double chk_k(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
@@ -236,10 +243,8 @@ struct softmax : public layer {
     softmax() : layer("softmax") {}
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) {
-            out[i].resize(in[i].size());
-            double sum = 0;
-            for (int j = 0; j < (int)in[i].size(); j++) sum += (out[i](j) = exp(in[i](j)));
-            out[i] /= sum;
+            out[i] = exp(in[i].array() - in[i].maxCoeff());
+            out[i] /= out[i].sum();
         }
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) { assert(0); }
@@ -441,38 +446,52 @@ struct data_set {
 void sgd(const data_set &data, layer_seq &net, int batch_sz, int epoch, function<double(int)> lr_func,
          function<double(const vec_batch &, const vec_batch &)> err_func) {
     int t0 = clock();
+    double tloss = 0;
     for (int i = 1; i <= epoch; i++) {
-        net.sgd(data.get_train_batch(batch_sz), lr_func(i));
-        if (i % 50 == 0) {
-            net.set_train_mode(0);
-            double sum = 0;
-            for (int j = 0; j < (int)data.valid.first.size(); j++) {
-                batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
-                sum += err_func(net.forward(tmp.first), tmp.second);
-            }
+        auto tmp = data.get_train_batch(batch_sz);
+        net.sgd(tmp, lr_func(i));
+        tloss = tloss * 0.9 + err_func(net.layers.back()->out, tmp.second) * 0.1;
+        if (i % 100 == 0) {
+            cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
-            cerr << "Error: " << sum / data.valid.first.size() << endl;
-            net.set_train_mode(1);
+            cerr << "Loss: " << tloss << endl;
+            if (i % 1000 == 0) {
+                net.set_train_mode(0);
+                double sum = 0;
+                for (int j = 0; j < (int)data.valid.first.size(); j++) {
+                    batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
+                    sum += err_func(net.forward(tmp.first), tmp.second);
+                }
+                net.set_train_mode(1);
+                cerr << "!! Error: " << sum / data.valid.first.size() << endl;
+            }
         }
     }
 }
 void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
           function<double(const vec_batch &, const vec_batch &)> err_func) {
     int t0 = clock();
+    double tloss = 0;
     for (int i = 1; i <= epoch; i++) {
-        net.adam(data.get_train_batch(batch_sz), i);
-        if (i % 50 == 0) {
-            net.set_train_mode(0);
-            double sum = 0;
-            for (int j = 0; j < (int)data.valid.first.size(); j++) {
-                batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
-                sum += err_func(net.forward(tmp.first), tmp.second);
-            }
+        auto tmp = data.get_train_batch(batch_sz);
+        net.adam(tmp, i);
+        tloss = tloss * 0.9 + err_func(net.layers.back()->out, tmp.second) * 0.1;
+        if (i % 100 == 0) {
+            cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
-            cerr << "Error: " << sum / data.valid.first.size() << endl;
-            net.set_train_mode(1);
+            cerr << "Loss: " << tloss << endl;
+            if (i % 1000 == 0) {
+                net.set_train_mode(0);
+                double sum = 0;
+                for (int j = 0; j < (int)data.valid.first.size(); j++) {
+                    batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
+                    sum += err_func(net.forward(tmp.first), tmp.second);
+                }
+                net.set_train_mode(1);
+                cerr << "!! Error: " << sum / data.valid.first.size() << endl;
+            }
         }
     }
 }

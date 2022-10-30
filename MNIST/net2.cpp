@@ -1,11 +1,8 @@
+#include "../include/optimize.h"
 #include "../include/net2.h"
-
 #include <bits/stdc++.h>
 
-#include <cstdlib>
-#include <memory>
 
-#include "../include/optimize.h"
 using namespace std;
 
 int ReverseInt(int i) {
@@ -89,7 +86,12 @@ int main() {
     /* x << 1, 2, 3, 4; */
     /* x=(mat)x.array() + x; */
     /* cout<<x.array().inverse(); */
-    net.add(make_shared<linear>(14 * 14, 128));
+    net.add(make_shared<linear>(28 * 28, 300));
+    net.add(make_shared<batchnorm>(300));
+
+    net.add(make_shared<swish>());
+    net.add(make_shared<linear>(300, 128));
+
     net.add(make_shared<swish>());
     net.add(make_shared<batchnorm>(128));
     net.add(make_shared<linear>(128, 128));
@@ -116,7 +118,8 @@ int main() {
     for (int i = 0; i < _images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
-        data.valid.first.push_back(make_vec(pool(_images[i])));
+        data.valid.first.push_back(make_vec(_images[i]));
+        /* data.valid.first.push_back(make_vec(pool(_images[i]))); */
         data.valid.second.push_back(make_vec(out));
         /* cnt -= chk(net.forward(make_vec(pool(_images[i]))),make_vec(out)); */
     };
@@ -124,16 +127,13 @@ int main() {
     for (int i = 0; i < images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
-        data.train.first.push_back(make_vec(pool(images[i])));
+        data.train.first.push_back(make_vec(images[i]));
+        /* data.train.first.push_back(make_vec(pool(images[i]))); */
         data.train.second.push_back(make_vec(out));
     }
-    sgd(
-        data, net, 128, 50000, [](int x) { return 1. / 30 / 10; }, chk_k);
-    /* adam(data, net, 128, 100000, chk_k); */
-    /* cout << ((batchnorm*)net.layers[6].get())->gama; */
-    /* cout << ((batchnorm*)net.layers[6].get())->beta; */
-    /* cout << ((batchnorm*)net.layers[6].get())->running_var; */
-    /* cout << ((batchnorm*)net.layers[6].get())->running_mean; */
+    /* sgd( */
+    /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
+    adam(data, net, 128, 100000, chk_k);
 
     return 0;
 }
