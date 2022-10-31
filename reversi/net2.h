@@ -554,13 +554,9 @@ void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
                     sum += err_func(net.forward(tmp.first), tmp.second);
                 }
                 net.set_train_mode(1);
-                sum /= data.valid.first.size();
-                cerr << "!! Error: " << sum << endl;
-                if (sum < mn && wrtf != "") {
-                    cerr << "Saved" << endl;
-                    mn = sum;
-                    net.writef(wrtf);
-                }
+                sum/=data.valid.first.size(); 
+                cerr << "!! Error: " << sum  << endl;
+                if(sum<mn)
             }
         }
     }

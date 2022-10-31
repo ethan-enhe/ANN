@@ -69,11 +69,8 @@ int main() {
     fin.close();
 
     net.add<same, int>(64);
-    net.add<hardswish, int>(200);
-    net.add<hardswish, int>(200);
-    net.add<hardswish, int>(200);
-    net.add<hardswish, int>(200);
-    net.add<hardswish, int>(200);
+   net.add<hardswish, int>(128);
+    net.add<hardswish, int>(128);
     net.add<sigmoid, int>(1);
     //net.sgd(tdata, _tdata, 8, 100000, 1000, [](int i) { return 1. / 8 / 1 + 0.005 * i; },variance);
     net.adam(tdata, _tdata, 8, 100000, 1000, variance);
