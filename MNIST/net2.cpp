@@ -1,7 +1,11 @@
-#include "../include/optimize.h"
 #include "../include/net2.h"
+
 #include <bits/stdc++.h>
 
+#include <cstdlib>
+#include <fstream>
+
+#include "../include/optimize.h"
 
 using namespace std;
 
@@ -23,8 +27,8 @@ void read_Mnist_Label(string filename, vector<double>& labels) {
         file.read((char*)&number_of_images, sizeof(number_of_images));
         magic_number = ReverseInt(magic_number);
         number_of_images = ReverseInt(number_of_images);
-        cout << "magic number = " << magic_number << endl;
-        cout << "number of images = " << number_of_images << endl;
+        cerr << "magic number = " << magic_number << endl;
+        cerr << "number of images = " << number_of_images << endl;
 
         for (int i = 0; i < number_of_images; i++) {
             unsigned char label = 0;
@@ -51,10 +55,10 @@ void read_Mnist_Images(string filename, vector<vector<double>>& images) {
         n_rows = ReverseInt(n_rows);
         n_cols = ReverseInt(n_cols);
 
-        cout << "magic number = " << magic_number << endl;
-        cout << "number of images = " << number_of_images << endl;
-        cout << "rows = " << n_rows << endl;
-        cout << "cols = " << n_cols << endl;
+        cerr << "magic number = " << magic_number << endl;
+        cerr << "number of images = " << number_of_images << endl;
+        cerr << "rows = " << n_rows << endl;
+        cerr << "cols = " << n_cols << endl;
 
         for (int i = 0; i < number_of_images; i++) {
             vector<double> tp;
@@ -81,11 +85,6 @@ vector<double> pool(const vector<double>& x) {
 layer_seq net;
 data_set data;
 int main() {
-    cout << Eigen::nbThreads() << endl;
-    /* mat x(2, 2); */
-    /* x << 1, 2, 3, 4; */
-    /* x=(mat)x.array() + x; */
-    /* cout<<x.array().inverse(); */
     net.add(make_shared<linear>(28 * 28, 300));
     net.add(make_shared<batchnorm>(300));
 
@@ -104,8 +103,9 @@ int main() {
     net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
-    cout << net.shape();
-    /* net.read("./newmnist.txt"); */
+    cerr << net.shape();
+    cerr << "Thread:" << Eigen::nbThreads() << endl;
+    /* net.readf("model.txt"); */
 
     vector<double> labels, _labels;
     vector<vector<double>> images, _images;
@@ -114,16 +114,19 @@ int main() {
     read_Mnist_Images("./train-images.idx3-ubyte", images);
     read_Mnist_Images("./t10k-images.idx3-ubyte", _images);
 
-    /* double cnt = 0; */
+    double cnt = 0;
+    net.set_train_mode(0);
     for (int i = 0; i < _images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
         data.valid.first.push_back(make_vec(_images[i]));
         /* data.valid.first.push_back(make_vec(pool(_images[i]))); */
         data.valid.second.push_back(make_vec(out));
-        /* cnt -= chk(net.forward(make_vec(pool(_images[i]))),make_vec(out)); */
+        cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
     };
-    /* cout << cnt/_images.size() << endl; */
+    cout << cnt / _images.size() << endl;
+    net.set_train_mode(1);
+
     for (int i = 0; i < images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
@@ -133,7 +136,7 @@ int main() {
     }
     /* sgd( */
     /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
-    adam(data, net, 128, 100000, chk_k);
+    adam(data, net, 128, 10000, chk_k);
 
     return 0;
 }

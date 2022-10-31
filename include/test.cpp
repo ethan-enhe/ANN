@@ -1,3 +1,6 @@
+#include <cstring>
+#include <fstream>
+#include <ostream>
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
@@ -5,10 +8,10 @@
 using namespace std;
 layer_seq net;
 int main() {
-    mat x(2, 2), y(2, 2);
-    x << 1, 2, 3, 4;
-    y << 1, 2, 3, 4;
-    cout << (x.array() / y.array());
+    /* mat x(2, 2), y(2, 2); */
+    /* x << 1, 2, 3, 4; */
+    /* y << 1, 2, 3, 4; */
+    /* cout << (x.array() / y.array()); */
     /* net.add(make_shared<batchnorm>(1)); */
     /* net.add(make_shared<same>()); */
     /* cout << net.shape(); */

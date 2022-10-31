@@ -4,6 +4,7 @@
 #include <bits/stdc++.h>
 
 #include <algorithm>
+#include <fstream>
 
 #include "../Eigen/Core"
 
@@ -103,9 +104,13 @@ struct layer {
     virtual void forward(const vec_batch &in) {}
     //根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
     virtual void backward(const vec_batch &, const vec_batch &) = 0;
+    virtual void clear_grad() {}
+    virtual void clear_adam() {}
     //以 rate 学习率梯度下降
-    virtual void sgd(double){};
-    virtual void adam(int){};
+    virtual void sgd(double) {}
+    virtual void adam(int) {}
+    virtual void write(ostream &io) {}
+    virtual void read(istream &io) {}
 };
 
 struct linear : public layer {
@@ -125,25 +130,29 @@ struct linear : public layer {
         , grad_bias(out_sz)
         , s_bias(out_sz)
         , r_bias(out_sz) {
-        s_weight.setZero();
-        r_weight.setZero();
-        s_bias.setZero();
-        r_bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
     }
+    void clear_grad() {
+        grad_weight.setZero();
+        grad_bias.setZero();
+    }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         // nx.in==W*this.in+B
         // dnx.in/din
-        grad_weight.setZero();
-        grad_bias.setZero();
         for (int i = 0; i < batch_sz; i++) {
             grad_bias += nxt_grad[i];
             grad_weight += nxt_grad[i] * in[i].transpose();
             grad[i] = weight.transpose() * nxt_grad[i];
         }
+    }
+    void clear_adam() {
+        s_weight.setZero();
+        r_weight.setZero();
+        s_bias.setZero();
+        r_bias.setZero();
     }
     void adam(int t) {
         double inv1 = 1. / (1. - pow(adam_rho1, t));
@@ -159,6 +168,14 @@ struct linear : public layer {
     void sgd(double rate) {
         bias -= rate * grad_bias;
         weight -= rate * grad_weight;
+    }
+    void write(ostream &io) {
+        for (auto &i : weight.reshaped()) io.write((char *)&i, sizeof(i));
+        for (auto &i : bias.reshaped()) io.write((char *)&i, sizeof(i));
+    }
+    void read(istream &io) {
+        for (auto &i : weight.reshaped()) io.read((char *)&i, sizeof(i));
+        for (auto &i : bias.reshaped()) io.read((char *)&i, sizeof(i));
     }
 };
 struct sigmoid : public layer {
@@ -278,10 +295,6 @@ struct batchnorm : public layer {
         , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
-        s_gama.setZero();
-        r_gama.setZero();
-        s_beta.setZero();
-        r_beta.setZero();
     }
     void forward(const vec_batch &in) {
         if (train_mode) {
@@ -304,10 +317,6 @@ struct batchnorm : public layer {
         }
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
-        grad_gama.setZero();
-        grad_beta.setZero();
-        grad_mean.setZero();
-        grad_var.setZero();
         for (int i = 0; i < batch_sz; i++) {
             grad_normalized_x = nxt_grad[i].array() * gama.array();
 
@@ -324,9 +333,21 @@ struct batchnorm : public layer {
         for (int i = 0; i < batch_sz; i++)
             grad[i].array() += (grad_mean.array() + 2 * grad_var.array() * (in[i] - mean).array()) / batch_sz;
     }
+    void clear_grad() {
+        grad_gama.setZero();
+        grad_beta.setZero();
+        grad_mean.setZero();
+        grad_var.setZero();
+    }
     void sgd(double rate) {
         grad_beta -= rate * grad_beta;
         grad_gama -= rate * grad_gama;
+    }
+    void clear_adam() {
+        s_gama.setZero();
+        r_gama.setZero();
+        s_beta.setZero();
+        r_beta.setZero();
     }
     void adam(int t) {
         double inv1 = 1. / (1. - pow(adam_rho1, t));
@@ -338,6 +359,18 @@ struct batchnorm : public layer {
         s_gama = adam_rho1 * s_gama + (1. - adam_rho1) * grad_gama;
         r_gama = adam_rho2 * r_gama + (1. - adam_rho2) * grad_gama.cwiseAbs2();
         gama.array() -= inv1 * adam_lr * s_gama.array() / (sqrt(inv2 * r_gama.array()) + EPS);
+    }
+    void write(ostream &io) {
+        for (auto &i : gama.reshaped()) io.write((char *)&i, sizeof(i));
+        for (auto &i : beta.reshaped()) io.write((char *)&i, sizeof(i));
+        for (auto &i : running_mean.reshaped()) io.write((char *)&i, sizeof(i));
+        for (auto &i : running_var.reshaped()) io.write((char *)&i, sizeof(i));
+    }
+    void read(istream &io) {
+        for (auto &i : gama.reshaped()) io.read((char *)&i, sizeof(i));
+        for (auto &i : beta.reshaped()) io.read((char *)&i, sizeof(i));
+        for (auto &i : running_mean.reshaped()) io.read((char *)&i, sizeof(i));
+        for (auto &i : running_var.reshaped()) io.read((char *)&i, sizeof(i));
     }
 };
 struct same : public layer {
@@ -387,16 +420,30 @@ struct layer_seq {
         return layers[0]->grad;
     }
     void sgd(const batch &data, double rate) {
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->clear_grad();
         forward(data.first);
         backward(data.second);
-        int layer_sz = layers.size();
         for (int i = 0; i < layer_sz; i++) layers[i]->sgd(rate);
     }
     void adam(const batch &data, int t) {
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->clear_grad();
         forward(data.first);
         backward(data.second);
-        int layer_sz = layers.size();
         for (int i = 0; i < layer_sz; i++) layers[i]->adam(t);
+    }
+    void writef(const string &f) {
+        ofstream fout(f, ios::binary | ios::out);
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->write(fout);
+        fout.close();
+    }
+    void readf(const string &f) {
+        ifstream fin(f, ios::binary | ios::in);
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->read(fin);
+        fin.close();
     }
 };
 //}}}
@@ -473,6 +520,7 @@ void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
           function<double(const vec_batch &, const vec_batch &)> err_func) {
     int t0 = clock();
     double tloss = 0;
+    for (int i = 0; i < (int)net.layers.size(); i++) net.layers[i]->clear_adam();
     for (int i = 1; i <= epoch; i++) {
         auto tmp = data.get_train_batch(batch_sz);
         net.adam(tmp, i);
