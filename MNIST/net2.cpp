@@ -2,11 +2,6 @@
 
 #include <bits/stdc++.h>
 
-#include <cstdlib>
-#include <fstream>
-
-#include "../include/optimize.h"
-
 using namespace std;
 
 int ReverseInt(int i) {
@@ -103,6 +98,8 @@ int main() {
     net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
+    net.readf("./model.txt");
+    net.set_train_mode(0);
     cerr << net.shape();
     cerr << "Thread:" << Eigen::nbThreads() << endl;
     /* net.readf("model.txt"); */
@@ -136,7 +133,7 @@ int main() {
     }
     /* sgd( */
     /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
-    adam(data, net, 128, 10000, chk_k);
+    adam(data, net, 128, 100000, chk_k, "model.txt");
 
     return 0;
 }
