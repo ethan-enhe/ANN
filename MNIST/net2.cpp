@@ -98,7 +98,7 @@ int main() {
     net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
-    net.readf("./model.txt");
+    /* net.readf("./model.txt"); */
     net.set_train_mode(0);
     cerr << net.shape();
     cerr << "Thread:" << Eigen::nbThreads() << endl;

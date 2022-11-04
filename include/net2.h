@@ -15,6 +15,7 @@ using namespace std;
 using vec = VectorXd;
 using mat = MatrixXd;
 using vec_batch = vector<vec>;
+using weight_grad = vector<pair<mat *, mat *>>;
 using batch = pair<vec_batch, vec_batch>;
 const double INF = 100;
 const double EPS = 1e-8;
@@ -122,6 +123,9 @@ struct layer {
     virtual void forward(const vec_batch &in) {}
     //根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
     virtual void backward(const vec_batch &, const vec_batch &) = 0;
+
+    //返回这一层对应的系数，梯度矩阵的指针
+    virtual weight_grad register_weight_grad() { return {}; }
     virtual void clear_grad() {}
     virtual void clear_adam() {}
     //以 rate 学习率梯度下降
@@ -135,7 +139,7 @@ struct linear : public layer {
     const int in_sz, out_sz;
     // 系数，系数梯度，一阶累积量，二阶累积量
     mat weight, grad_weight, s_weight, r_weight;
-    vec bias, grad_bias, s_bias, r_bias;
+    mat bias, grad_bias, s_bias, r_bias;
     linear(int in_sz, int out_sz)
         : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
         , in_sz(in_sz)
@@ -144,10 +148,10 @@ struct linear : public layer {
         , grad_weight(out_sz, in_sz)
         , s_weight(out_sz, in_sz)
         , r_weight(out_sz, in_sz)
-        , bias(out_sz)
-        , grad_bias(out_sz)
-        , s_bias(out_sz)
-        , r_bias(out_sz) {
+        , bias(out_sz, 1)
+        , grad_bias(out_sz, 1)
+        , s_bias(out_sz, 1)
+        , r_bias(out_sz, 1) {
         bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
@@ -287,34 +291,35 @@ struct softmax : public layer {
 };
 struct batchnorm : public layer {
     //平均值，方差
-    vec mean, running_mean, grad_mean;
-    vec var, running_var, grad_var, inv_var;
-    vec gama, grad_gama, s_gama, r_gama;
-    vec beta, grad_beta, s_beta, r_beta;
+    mat mean, running_mean, grad_mean;
+    mat var, running_var, grad_var, inv_var;
+    mat gama, grad_gama, s_gama, r_gama;
+    mat beta, grad_beta, s_beta, r_beta;
     //这两个用来辅助,inv记录1/sqrt(方差+eps)
-    vec grad_normalized_x;
+    mat grad_normalized_x;
     const double momentum;
     batchnorm(int sz, double momentum = 0.9)
         : layer("batchnorm_sgd " + to_string(sz))
-        , mean(sz)
-        , running_mean(sz)
-        , grad_mean(sz)
-        , var(sz)
-        , running_var(sz)
-        , grad_var(sz)
-        , inv_var(sz)
-        , gama(sz)
-        , grad_gama(sz)
-        , s_gama(sz)
-        , r_gama(sz)
-        , beta(sz)
-        , grad_beta(sz)
-        , s_beta(sz)
-        , r_beta(sz)
+        , mean(sz, 1)
+        , running_mean(sz, 1)
+        , grad_mean(sz, 1)
+        , var(sz, 1)
+        , running_var(sz, 1)
+        , grad_var(sz, 1)
+        , inv_var(sz, 1)
+        , gama(sz, 1)
+        , grad_gama(sz, 1)
+        , s_gama(sz, 1)
+        , r_gama(sz, 1)
+        , beta(sz, 1)
+        , grad_beta(sz, 1)
+        , s_beta(sz, 1)
+        , r_beta(sz, 1)
         , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
     }
+    weight_grad register_weight_grad() { return {{&gama, &grad_gama}, {&beta, &grad_beta}}; }
     void forward(const vec_batch &in) {
         if (train_mode) {
             mean.setZero();
@@ -325,7 +330,9 @@ struct batchnorm : public layer {
             var /= batch_sz;
             inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
-            running_var = running_var * momentum + var * (1 - momentum);
+            //使用无偏方差
+            running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum);
+            /* running_var = running_var * momentum + var * (1 - momentum); */
 
             for (int i = 0; i < batch_sz; i++)
                 out[i] = (in[i] - mean).array() * inv_var.array() * gama.array() + beta.array();
@@ -533,7 +540,7 @@ void sgd(const data_set &data, layer_seq &net, int batch_sz, int epoch, function
     }
 }
 void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
-          function<double(const vec_batch &, const vec_batch &)> err_func, const string &wrtf) {
+          function<double(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
     int t0 = clock();
     double tloss = 0, mn = INF;
     for (int i = 0; i < (int)net.layers.size(); i++) net.layers[i]->clear_adam();
@@ -556,10 +563,10 @@ void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
                 net.set_train_mode(1);
                 sum /= data.valid.first.size();
                 cerr << "!! Error: " << sum << endl;
-                if (sum < mn && wrtf != "") {
+                if (sum < mn && save_file != "") {
                     cerr << "Saved" << endl;
                     mn = sum;
-                    net.writef(wrtf);
+                    net.writef(save_file);
                 }
             }
         }

@@ -1,10 +1,11 @@
 #ifndef NET_H
 #define NET_H
 
-#include <bits/stdc++.h>
+#pragma GCC optimize("O3,unroll-loops")
+#pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
+#pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
 
-#include <algorithm>
-#include <fstream>
+#include <bits/stdc++.h>
 
 #include "../Eigen/Core"
 
@@ -45,7 +46,16 @@ double variance(const vec_batch &out, const vec_batch &label) {
     for (int i = 0; i < batch_sz; i++)
         for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
 
-    return res / batch_sz / 2;
+    return res / batch_sz / out[0].rows();
+}
+double sqrtvariance(const vec_batch &out, const vec_batch &label) {
+    auto square = [](double x) { return x * x; };
+    const int batch_sz = out.size();
+    double res = 0;
+    for (int i = 0; i < batch_sz; i++)
+        for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
+
+    return sqrt(res / batch_sz / out[0].rows());
 }
 //分2类，交叉熵
 double crossentropy_2(const vec_batch &out, const vec_batch &label) {
@@ -73,7 +83,15 @@ double chk_k(const vec_batch &out, const vec_batch &label) {
             if (out[i](j) > out[i](mx)) mx = j;
         res += (label[i](mx) > 0.9);
     }
-    return res / batch_sz;
+    return -res / batch_sz;
+}
+double chk_2(const vec_batch &out, const vec_batch &label) {
+    const int batch_sz = out.size();
+    double res = 0;
+    for (int i = 0; i < batch_sz; i++) {
+        for (int j = 0; j < out[i].rows(); j++) res += (out[i](j) > 0.5) == (label[i](j) > 0.5);
+    }
+    return -res / batch_sz / out[0].rows();
 }
 //}}}
 //{{{ Layer
@@ -117,7 +135,7 @@ struct linear : public layer {
     const int in_sz, out_sz;
     // 系数，系数梯度，一阶累积量，二阶累积量
     mat weight, grad_weight, s_weight, r_weight;
-    vec bias, grad_bias, s_bias, r_bias;
+    mat bias, grad_bias, s_bias, r_bias;
     linear(int in_sz, int out_sz)
         : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
         , in_sz(in_sz)
@@ -126,10 +144,11 @@ struct linear : public layer {
         , grad_weight(out_sz, in_sz)
         , s_weight(out_sz, in_sz)
         , r_weight(out_sz, in_sz)
-        , bias(out_sz)
-        , grad_bias(out_sz)
-        , s_bias(out_sz)
-        , r_bias(out_sz) {
+        , bias(out_sz, 1)
+        , grad_bias(out_sz, 1)
+        , s_bias(out_sz, 1)
+        , r_bias(out_sz, 1) {
+        bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
     void forward(const vec_batch &in) {
@@ -268,30 +287,30 @@ struct softmax : public layer {
 };
 struct batchnorm : public layer {
     //平均值，方差
-    vec mean, running_mean, grad_mean;
-    vec var, running_var, grad_var, inv_var;
-    vec gama, grad_gama, s_gama, r_gama;
-    vec beta, grad_beta, s_beta, r_beta;
+    mat mean, running_mean, grad_mean;
+    mat var, running_var, grad_var, inv_var;
+    mat gama, grad_gama, s_gama, r_gama;
+    mat beta, grad_beta, s_beta, r_beta;
     //这两个用来辅助,inv记录1/sqrt(方差+eps)
-    vec grad_normalized_x;
+    mat grad_normalized_x;
     const double momentum;
     batchnorm(int sz, double momentum = 0.9)
         : layer("batchnorm_sgd " + to_string(sz))
-        , mean(sz)
-        , running_mean(sz)
-        , grad_mean(sz)
-        , var(sz)
-        , running_var(sz)
-        , grad_var(sz)
-        , inv_var(sz)
-        , gama(sz)
-        , grad_gama(sz)
-        , s_gama(sz)
-        , r_gama(sz)
-        , beta(sz)
-        , grad_beta(sz)
-        , s_beta(sz)
-        , r_beta(sz)
+        , mean(sz,1)
+        , running_mean(sz,1)
+        , grad_mean(sz,1)
+        , var(sz,1)
+        , running_var(sz,1)
+        , grad_var(sz,1)
+        , inv_var(sz,1)
+        , gama(sz,1)
+        , grad_gama(sz,1)
+        , s_gama(sz,1)
+        , r_gama(sz,1)
+        , beta(sz,1)
+        , grad_beta(sz,1)
+        , s_beta(sz,1)
+        , r_beta(sz,1)
         , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
@@ -306,6 +325,8 @@ struct batchnorm : public layer {
             var /= batch_sz;
             inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
+            /* //使用无偏方差 */
+            /* running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum); */
             running_var = running_var * momentum + var * (1 - momentum);
 
             for (int i = 0; i < batch_sz; i++)
@@ -434,29 +455,27 @@ struct layer_seq {
         for (int i = 0; i < layer_sz; i++) layers[i]->adam(t);
     }
     void writef(const string &f) {
-        ofstream fout(f,ios::binary|ios::out);
-
+        ofstream fout(f, ios::binary | ios::out);
         int layer_sz = layers.size();
         for (int i = 0; i < layer_sz; i++) layers[i]->write(fout);
         fout.close();
     }
-    void readf(istream &io) {
+    void readf(const string &f) {
+        ifstream fin(f, ios::binary | ios::in);
         int layer_sz = layers.size();
-        for (int i = 0; i < layer_sz; i++) layers[i]->read(io);
+        for (int i = 0; i < layer_sz; i++) layers[i]->read(fin);
+        fin.close();
     }
 };
 //}}}
 //{{{ Dataset
 struct data_set {
-    batch train, valid, test;
+    batch train, valid;
     data_set() {}
     data_set(const batch &all_data) {
         for (int i = 0; i < (int)all_data.first.size(); i++) {
-            int rnd = ri(0, 10);
+            int rnd = ri(0, 6);
             if (rnd == 0) {
-                test.first.push_back(all_data.first[i]);
-                test.second.push_back(all_data.second[i]);
-            } else if (rnd == 1) {
                 valid.first.push_back(all_data.first[i]);
                 valid.second.push_back(all_data.second[i]);
             } else {
@@ -516,9 +535,9 @@ void sgd(const data_set &data, layer_seq &net, int batch_sz, int epoch, function
     }
 }
 void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
-          function<double(const vec_batch &, const vec_batch &)> err_func) {
+          function<double(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
     int t0 = clock();
-    double tloss = 0;
+    double tloss = 0, mn = INF;
     for (int i = 0; i < (int)net.layers.size(); i++) net.layers[i]->clear_adam();
     for (int i = 1; i <= epoch; i++) {
         auto tmp = data.get_train_batch(batch_sz);
@@ -537,7 +556,13 @@ void adam(const data_set &data, layer_seq &net, int batch_sz, int epoch,
                     sum += err_func(net.forward(tmp.first), tmp.second);
                 }
                 net.set_train_mode(1);
-                cerr << "!! Error: " << sum / data.valid.first.size() << endl;
+                sum /= data.valid.first.size();
+                cerr << "!! Error: " << sum << endl;
+                if (sum < mn && save_file != "") {
+                    cerr << "Saved" << endl;
+                    mn = sum;
+                    net.writef(save_file);
+                }
             }
         }
     }
