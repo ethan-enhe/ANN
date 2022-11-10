@@ -52,7 +52,7 @@ int main() {
                     }
             if (!canput) last = -last;
             b.putchess(xc, yc, last);
-            if (data.size() - ind < 2 && ri(0, 6) == 0) {
+            if (data.size() - ind < 10000 && ri(0, 10) == 0) {
                 VectorXd in = make_vec(b.vectorize(1)), out(1), _out(1);
                 out << (delt > 0 ? 1 : (delt < 0 ? 0 : 0.5));
                 _out << (delt > 0 ? 0 : (delt < 0 ? 1 : 0.5));
@@ -84,39 +84,39 @@ int main() {
     net.add(make_shared<linear>(128, 1));
     net.add(make_shared<same>());
 
-    data_set sliced(tdata);
-    adam(sliced, net, 64, 50000, sqrtvariance, "test.txt");
+    /* data_set sliced(tdata); */
+    /* adam(sliced, net, 64, 50000, sqrtvariance, "test.txt"); */
 
-    /* net.readf("./test.txt"); */
-    /*     net.set_train_mode(0); */
-    /*     string a, tmp, c; */
-    /*     while (1) { */
-    /*         cin >> a >> tmp >> c; */
-    /*         string data = a + tmp + c; */
-    /*         int last = -1, ind = 0; */
-    /*         b.init(); */
-    /*         int step = 0; */
-    /*         while (b.win() == -2) { */
-    /*             ++step; */
-    /*             last = -last; */
-    /*             bool canput = 0; */
-    /*             int xc = data[ind + 1] - '0'; */
-    /*             int yc = data[ind] - 'a' + 1; */
-    /*             for (int i = 1; i <= 8; i++) */
-    /*                 for (int j = 1; j <= 8; j++) */
-    /*                     if (!b.board[i][j] && b.eat(0, xc, yc, last)) { */
-    /*                         canput = 1; */
-    /*                         break; */
-    /*                     } */
-    /*             if (canput) { */
-    /*                 ind += 2; */
-    /*                 b.putchess(xc, yc, last); */
-    /*                 /1* b.raw_prt(); *1/ */
-    /*                 cout << "step: " << step << endl; */
-    /*                 cout << net.forward({make_vec(b.vectorize(1))})[0](0) * 200000 - 100000 << endl; */
-    /*                 cout << b.assess(1) << endl; */
-    /*             } */
-    /*         } */
-    /*     } */
+    net.readf("./test.txt");
+        net.set_train_mode(0);
+        string a, tmp, c;
+        while (1) {
+            cin >> a >> tmp >> c;
+            string data = a + tmp + c;
+            int last = -1, ind = 0;
+            b.init();
+            int step = 0;
+            while (b.win() == -2) {
+                ++step;
+                last = -last;
+                bool canput = 0;
+                int xc = data[ind + 1] - '0';
+                int yc = data[ind] - 'a' + 1;
+                for (int i = 1; i <= 8; i++)
+                    for (int j = 1; j <= 8; j++)
+                        if (!b.board[i][j] && b.eat(0, xc, yc, last)) {
+                            canput = 1;
+                            break;
+                        }
+                if (canput) {
+                    ind += 2;
+                    b.putchess(xc, yc, last);
+                    b.raw_prt();
+                    cout << "step: " << step << endl;
+                    cout << net.forward({make_vec(b.vectorize(1))})[0](0) * 200000 - 100000 << endl;
+                    /* cout << b.assess(1) << endl; */
+                }
+            }
+        }
     return 0;
 }

@@ -537,7 +537,7 @@ struct sgd : public optimizer_holder<0> {
 struct adam : public optimizer_holder<0> {
     /* double lr; */
     /* sgd(double lr = 0.001) : lr(lr) {} */
-    /* void upd(mat &w, const mat &gw) { w -= gw * lr; } */
+    void upd(mat &w, const mat &gw) { w -= gw * lr; }
 };
 
 //}}}
