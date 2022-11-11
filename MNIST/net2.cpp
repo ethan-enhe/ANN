@@ -133,7 +133,9 @@ int main() {
     }
     /* sgd( */
     /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
-    adam(data, net, 128, 100000, chk_k, "model.txt");
+    adam opt;
+    upd(opt,data, net, 128, 100000, chk_k, "model.txt");
+    /* adam(data, net, 128, 100000, chk_k, "model.txt"); */
 
     return 0;
 }

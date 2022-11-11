@@ -8,7 +8,7 @@ int main() {
 
     FCN.add(make_shared<linear>(64, 128));
     FCN.add(make_shared<hardswish>());
-    FCN.add(make_shared<batchnorm>(128));
+    /* FCN.add(make_shared<batchnorm>(128)); */
 
     FCN.add(make_shared<linear>(128, 128));
     FCN.add(make_shared<hardswish>());
@@ -41,7 +41,9 @@ int main() {
         data.second.push_back(out);
     }
     data_set sliced(data);
-    adam(sliced, FCN, 32, 10000, sqrtvariance);
+    adam opt;
+    upd(opt,sliced,FCN,32,10000,sqrtvariance);
+    /* adam(sliced, FCN, 32, 10000, sqrtvariance); */
     /* data_set sliced_data(data); */
     /* /1* sgd( *1/ */
     /* /1* sliced_data, FCN, 64, 10000, [](int x) { return 1. / 64. / (1. + x * 0.005); }, chk_k); *1/ */

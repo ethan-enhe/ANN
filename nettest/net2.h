@@ -1,6 +1,7 @@
 #ifndef NET_H
 #define NET_H
 
+#include <unordered_map>
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
@@ -34,7 +35,7 @@ vec make_vec(const vector<double> &x) {
     return res;
 }
 //}}}
-//{{{ Error func
+//{{{ Error Function
 double mylog(double x) {
     if (x == 0) return -INF;
     return log(x);
@@ -94,6 +95,46 @@ double chk_2(const vec_batch &out, const vec_batch &label) {
     return -res / batch_sz / out[0].rows();
 }
 //}}}
+//{{{ Optimizer
+struct optimizer {
+    virtual void upd(mat &, const mat &) = 0;
+};
+
+//一个类，用来维护每一个系数矩阵对应的额外信息，如动量之类的
+template <const int N>
+struct optimizer_holder : public optimizer {
+    unordered_map<const mat *, mat> V[N];
+    template <const int I>
+    mat &get(const mat &x) {
+        auto it = V[I].find(&x);
+        if (it != V[I].end())
+            return it->second;
+        else
+            return V[I][&x] = mat::Zero(x.rows(), x.cols());
+    }
+};
+
+struct sgd : public optimizer_holder<0> {
+    double lr;
+    sgd(double lr = 0.001) : lr(lr) {}
+    void upd(mat &w, const mat &gw) { w -= gw * lr; }
+};
+
+struct adam : public optimizer_holder<2> {
+    double lr, rho1, rho2, eps;
+    double mult1, mult2;
+    adam(double lr = 0.001, double rho1 = 0.9, double rho2 = 0.999, double eps = 1e-6)
+        : lr(lr), rho1(rho1), rho2(rho2), eps(eps), mult1(1), mult2(1) {}
+    void upd(mat &w, const mat &gw) {
+        mat &s = get<0>(w), &r = get<1>(w);
+        mult1 *= rho1, mult2 *= rho2;
+        s = s * rho1 + gw * (1. - rho1);
+        r = r * rho2 + gw.cwiseAbs2() * (1. - rho2);
+        w.array() -= lr * s.array() / (sqrt(r.array() / (1. - mult2) + eps)) / (1. - mult1);
+    }
+};
+
+//}}}
 //{{{ Layer
 struct layer;
 using layerp = shared_ptr<layer>;
@@ -122,81 +163,20 @@ struct layer {
     virtual void forward(const vec_batch &in) {}
     //根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
     virtual void backward(const vec_batch &, const vec_batch &) = 0;
+
     virtual void clear_grad() {}
-    virtual void clear_adam() {}
+    //返回这一层对应的系数，梯度矩阵的指针
+    virtual void write(ostream &io) {}
+    virtual void read(istream &io) {}
     //以 rate 学习率梯度下降
     virtual void sgd(double) {}
     virtual void adam(int) {}
-    virtual void write(ostream &io) {}
-    virtual void read(istream &io) {}
+    virtual void clear_adam() {}
+    virtual void upd(optimizer &opt) {}
 };
 
-struct linear : public layer {
-    const int in_sz, out_sz;
-    // 系数，系数梯度，一阶累积量，二阶累积量
-    mat weight, grad_weight, s_weight, r_weight;
-    mat bias, grad_bias, s_bias, r_bias;
-    linear(int in_sz, int out_sz)
-        : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
-        , in_sz(in_sz)
-        , out_sz(out_sz)
-        , weight(out_sz, in_sz)
-        , grad_weight(out_sz, in_sz)
-        , s_weight(out_sz, in_sz)
-        , r_weight(out_sz, in_sz)
-        , bias(out_sz, 1)
-        , grad_bias(out_sz, 1)
-        , s_bias(out_sz, 1)
-        , r_bias(out_sz, 1) {
-        bias.setZero();
-        for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
-    }
-    void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
-    }
-    void clear_grad() {
-        grad_weight.setZero();
-        grad_bias.setZero();
-    }
-    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
-        // nx.in==W*this.in+B
-        // dnx.in/din
-        for (int i = 0; i < batch_sz; i++) {
-            grad_bias += nxt_grad[i];
-            grad_weight += nxt_grad[i] * in[i].transpose();
-            grad[i] = weight.transpose() * nxt_grad[i];
-        }
-    }
-    void clear_adam() {
-        s_weight.setZero();
-        r_weight.setZero();
-        s_bias.setZero();
-        r_bias.setZero();
-    }
-    void adam(int t) {
-        double inv1 = 1. / (1. - pow(adam_rho1, t));
-        double inv2 = 1. / (1. - pow(adam_rho2, t));
-        s_weight = adam_rho1 * s_weight + (1. - adam_rho1) * grad_weight;
-        r_weight = adam_rho2 * r_weight + (1. - adam_rho2) * grad_weight.cwiseAbs2();
-        weight.array() -= inv1 * adam_lr * s_weight.array() / (sqrt(inv2 * r_weight.array()) + EPS);
-
-        s_bias = adam_rho1 * s_bias + (1. - adam_rho1) * grad_bias;
-        r_bias = adam_rho2 * r_bias + (1. - adam_rho2) * grad_bias.cwiseAbs2();
-        bias.array() -= inv1 * adam_lr * s_bias.array() / (sqrt(inv2 * r_bias.array()) + EPS);
-    }
-    void sgd(double rate) {
-        bias -= rate * grad_bias;
-        weight -= rate * grad_weight;
-    }
-    void write(ostream &io) {
-        for (auto &i : weight.reshaped()) io.write((char *)&i, sizeof(i));
-        for (auto &i : bias.reshaped()) io.write((char *)&i, sizeof(i));
-    }
-    void read(istream &io) {
-        for (auto &i : weight.reshaped()) io.read((char *)&i, sizeof(i));
-        for (auto &i : bias.reshaped()) io.read((char *)&i, sizeof(i));
-    }
-};
+//}}}
+//{{{ Activate Function
 struct sigmoid : public layer {
     sigmoid() : layer("sigmoid") {}
     void forward(const vec_batch &in) {
@@ -285,6 +265,78 @@ struct softmax : public layer {
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) { assert(0); }
 };
+//}}}
+//{{{ Layer to be trained
+struct linear : public layer {
+    const int in_sz, out_sz;
+    // 系数，系数梯度，一阶累积量，二阶累积量
+    mat weight, grad_weight, s_weight, r_weight;
+    mat bias, grad_bias, s_bias, r_bias;
+    linear(int in_sz, int out_sz)
+        : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
+        , in_sz(in_sz)
+        , out_sz(out_sz)
+        , weight(out_sz, in_sz)
+        , grad_weight(out_sz, in_sz)
+        , s_weight(out_sz, in_sz)
+        , r_weight(out_sz, in_sz)
+        , bias(out_sz, 1)
+        , grad_bias(out_sz, 1)
+        , s_bias(out_sz, 1)
+        , r_bias(out_sz, 1) {
+        bias.setZero();
+        for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
+    }
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
+    }
+    void clear_grad() {
+        grad_weight.setZero();
+        grad_bias.setZero();
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        // nx.in==W*this.in+B
+        // dnx.in/din
+        for (int i = 0; i < batch_sz; i++) {
+            grad_bias += nxt_grad[i];
+            grad_weight += nxt_grad[i] * in[i].transpose();
+            grad[i] = weight.transpose() * nxt_grad[i];
+        }
+    }
+    void upd(optimizer &opt) {
+        opt.upd(weight, grad_weight);
+        opt.upd(bias, grad_bias);
+    }
+    void clear_adam() {
+        s_weight.setZero();
+        r_weight.setZero();
+        s_bias.setZero();
+        r_bias.setZero();
+    }
+    void adam(int t) {
+        double inv1 = 1. / (1. - pow(adam_rho1, t));
+        double inv2 = 1. / (1. - pow(adam_rho2, t));
+        s_weight = adam_rho1 * s_weight + (1. - adam_rho1) * grad_weight;
+        r_weight = adam_rho2 * r_weight + (1. - adam_rho2) * grad_weight.cwiseAbs2();
+        weight.array() -= inv1 * adam_lr * s_weight.array() / (sqrt(inv2 * r_weight.array()) + EPS);
+
+        s_bias = adam_rho1 * s_bias + (1. - adam_rho1) * grad_bias;
+        r_bias = adam_rho2 * r_bias + (1. - adam_rho2) * grad_bias.cwiseAbs2();
+        bias.array() -= inv1 * adam_lr * s_bias.array() / (sqrt(inv2 * r_bias.array()) + EPS);
+    }
+    void sgd(double rate) {
+        bias -= rate * grad_bias;
+        weight -= rate * grad_weight;
+    }
+    void write(ostream &io) {
+        for (auto &i : weight.reshaped()) io.write((char *)&i, sizeof(i));
+        for (auto &i : bias.reshaped()) io.write((char *)&i, sizeof(i));
+    }
+    void read(istream &io) {
+        for (auto &i : weight.reshaped()) io.read((char *)&i, sizeof(i));
+        for (auto &i : bias.reshaped()) io.read((char *)&i, sizeof(i));
+    }
+};
 struct batchnorm : public layer {
     //平均值，方差
     mat mean, running_mean, grad_mean;
@@ -296,21 +348,21 @@ struct batchnorm : public layer {
     const double momentum;
     batchnorm(int sz, double momentum = 0.9)
         : layer("batchnorm_sgd " + to_string(sz))
-        , mean(sz,1)
-        , running_mean(sz,1)
-        , grad_mean(sz,1)
-        , var(sz,1)
-        , running_var(sz,1)
-        , grad_var(sz,1)
-        , inv_var(sz,1)
-        , gama(sz,1)
-        , grad_gama(sz,1)
-        , s_gama(sz,1)
-        , r_gama(sz,1)
-        , beta(sz,1)
-        , grad_beta(sz,1)
-        , s_beta(sz,1)
-        , r_beta(sz,1)
+        , mean(sz, 1)
+        , running_mean(sz, 1)
+        , grad_mean(sz, 1)
+        , var(sz, 1)
+        , running_var(sz, 1)
+        , grad_var(sz, 1)
+        , inv_var(sz, 1)
+        , gama(sz, 1)
+        , grad_gama(sz, 1)
+        , s_gama(sz, 1)
+        , r_gama(sz, 1)
+        , beta(sz, 1)
+        , grad_beta(sz, 1)
+        , s_beta(sz, 1)
+        , r_beta(sz, 1)
         , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
@@ -325,9 +377,9 @@ struct batchnorm : public layer {
             var /= batch_sz;
             inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
-            /* //使用无偏方差 */
-            /* running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum); */
-            running_var = running_var * momentum + var * (1 - momentum);
+            //使用无偏方差
+            running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum);
+            /* running_var = running_var * momentum + var * (1 - momentum); */
 
             for (int i = 0; i < batch_sz; i++)
                 out[i] = (in[i] - mean).array() * inv_var.array() * gama.array() + beta.array();
@@ -380,6 +432,10 @@ struct batchnorm : public layer {
         s_gama = adam_rho1 * s_gama + (1. - adam_rho1) * grad_gama;
         r_gama = adam_rho2 * r_gama + (1. - adam_rho2) * grad_gama.cwiseAbs2();
         gama.array() -= inv1 * adam_lr * s_gama.array() / (sqrt(inv2 * r_gama.array()) + EPS);
+    }
+    void upd(optimizer &opt) {
+        opt.upd(beta, grad_beta);
+        opt.upd(gama, grad_gama);
     }
     void write(ostream &io) {
         for (auto &i : gama.reshaped()) io.write((char *)&i, sizeof(i));
@@ -453,6 +509,15 @@ struct layer_seq {
         forward(data.first);
         backward(data.second);
         for (int i = 0; i < layer_sz; i++) layers[i]->adam(t);
+    }
+    void upd(optimizer &opt,const batch& data){
+        int layer_sz = layers.size();
+        for (int i = 0; i < layer_sz; i++) layers[i]->clear_grad();
+        forward(data.first);
+        backward(data.second);
+        for (int i = 0; i < layer_sz; i++) layers[i]->upd(opt);
+    }
+
     }
     void writef(const string &f) {
         ofstream fout(f, ios::binary | ios::out);
