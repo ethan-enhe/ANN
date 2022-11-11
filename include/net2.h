@@ -16,7 +16,6 @@ using namespace std;
 using vec = VectorXd;
 using mat = MatrixXd;
 using vec_batch = vector<vec>;
-using weight_grad = vector<pair<mat *, mat *>>;
 using batch = pair<vec_batch, vec_batch>;
 const double INF = 100;
 const double EPS = 1e-8;
@@ -96,6 +95,46 @@ double chk_2(const vec_batch &out, const vec_batch &label) {
     return -res / batch_sz / out[0].rows();
 }
 //}}}
+//{{{ Optimizer
+struct optimizer {
+    virtual void upd(mat &, const mat &) = 0;
+};
+
+//一个类，用来维护每一个系数矩阵对应的额外信息，如动量之类的
+template <const int N>
+struct optimizer_holder : public optimizer {
+    unordered_map<const mat *, mat> V[N];
+    template <const int I>
+    mat &get(const mat &x) {
+        auto it = V[I].find(&x);
+        if (it != V[I].end())
+            return it->second;
+        else
+            return V[I][&x] = mat::Zero(x.rows(), x.cols());
+    }
+};
+
+struct sgd : public optimizer_holder<0> {
+    double lr;
+    sgd(double lr = 0.001) : lr(lr) {}
+    void upd(mat &w, const mat &gw) { w -= gw * lr; }
+};
+
+struct adam : public optimizer_holder<2> {
+    double lr, rho1, rho2, eps;
+    double mult1, mult2;
+    adam(double lr = 0.001, double rho1 = 0.9, double rho2 = 0.999, double eps = 1e-6)
+        : lr(lr), rho1(rho1), rho2(rho2), eps(eps), mult1(1), mult2(1) {}
+    void upd(mat &w, const mat &gw) {
+        mat &s = get<0>(w), &r = get<1>(w);
+        mult1 *= rho1, mult2 *= rho2;
+        s = s * rho1 + gw * (1. - rho1);
+        r = r * rho2 + gw.cwiseAbs2() * (1. - rho2);
+        w.array() -= lr * s.array() / (sqrt(r.array() / (1. - mult2) + eps)) / (1. - mult1);
+    }
+};
+
+//}}}
 //{{{ Layer
 struct layer;
 using layerp = shared_ptr<layer>;
@@ -133,6 +172,7 @@ struct layer {
     virtual void sgd(double) {}
     virtual void adam(int) {}
     virtual void clear_adam() {}
+    virtual void upd(optimizer &opt) {}
 };
 
 //}}}
@@ -263,6 +303,10 @@ struct linear : public layer {
             grad[i] = weight.transpose() * nxt_grad[i];
         }
     }
+    void upd(optimizer &opt) {
+        opt.upd(weight, grad_weight);
+        opt.upd(bias, grad_bias);
+    }
     void clear_adam() {
         s_weight.setZero();
         r_weight.setZero();
@@ -389,6 +433,10 @@ struct batchnorm : public layer {
         r_gama = adam_rho2 * r_gama + (1. - adam_rho2) * grad_gama.cwiseAbs2();
         gama.array() -= inv1 * adam_lr * s_gama.array() / (sqrt(inv2 * r_gama.array()) + EPS);
     }
+    void upd(optimizer &opt) {
+        opt.upd(beta, grad_beta);
+        opt.upd(gama, grad_gama);
+    }
     void write(ostream &io) {
         for (auto &i : gama.reshaped()) io.write((char *)&i, sizeof(i));
         for (auto &i : beta.reshaped()) io.write((char *)&i, sizeof(i));
@@ -513,33 +561,6 @@ struct data_set {
         return res;
     }
 };
-//}}}
-//{{{ Optimizer
-//一个类，用来维护每一个稀疏矩阵对应的额外信息，如动量之类的
-template <const int N>
-struct optimizer_holder {
-    unordered_map<const mat *, mat> V[N];
-    template <const int I>
-    mat &get(const mat &x) {
-        auto it = V[I].find(&x);
-        if (it != V[I].end())
-            return it->second;
-        else
-            return V[I][&x] = mat::Zero(x.rows(), x.cols());
-    }
-};
-
-struct sgd : public optimizer_holder<0> {
-    double lr;
-    sgd(double lr = 0.001) : lr(lr) {}
-    void upd(mat &w, const mat &gw) { w -= gw * lr; }
-};
-struct adam : public optimizer_holder<0> {
-    /* double lr; */
-    /* sgd(double lr = 0.001) : lr(lr) {} */
-    /* void upd(mat &w, const mat &gw) { w -= gw * lr; } */
-};
-
 //}}}
 //{{{ Trainning
 
