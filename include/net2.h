@@ -1,7 +1,6 @@
 #ifndef NET_H
 #define NET_H
 
-#include <unordered_map>
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
@@ -51,13 +50,15 @@ double variance(const vec_batch &out, const vec_batch &label) {
 double sqrtvariance(const vec_batch &out, const vec_batch &label) {
     auto square = [](double x) { return x * x; };
     const int batch_sz = out.size();
-    double res = 0;
-    for (int i = 0; i < batch_sz; i++)
+    double res = 0, ans = 0;
+    for (int i = 0; i < batch_sz; i++) {
         for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
+        ans += sqrt(res / out[i].rows());
+    }
 
-    return sqrt(res / batch_sz / out[0].rows());
+    return ans / batch_sz;
 }
-//分2类，交叉熵
+// 分2类，交叉熵
 double crossentropy_2(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
     double res = 0;
@@ -99,7 +100,7 @@ struct optimizer {
     virtual void upd(mat &, const mat &) = 0;
 };
 
-//一个类，用来维护每一个系数矩阵对应的额外信息，如动量之类的
+// 一个类，用来维护每一个系数矩阵对应的额外信息，如动量之类的
 template <const int N>
 struct optimizer_holder : public optimizer {
     unordered_map<const mat *, mat> V[N];
@@ -114,9 +115,29 @@ struct optimizer_holder : public optimizer {
 };
 
 struct sgd : public optimizer_holder<0> {
-    double lr;
-    sgd(double lr = 0.001) : lr(lr) {}
-    void upd(mat &w, const mat &gw) { w -= gw * lr; }
+    double lr, lambda;
+    sgd(double lr = 0.01, double lambda = 0) : lr(lr), lambda(lambda) {}
+    void upd(mat &w, const mat &gw) { w -= (gw + w * lambda) * lr; }
+};
+struct nesterov : public optimizer_holder<1> {
+    double alpha, mu, lambda;
+    nesterov(double alpha = 0.01, double mu = 0.9, double lambda = 0) : alpha(alpha), mu(mu), lambda(lambda) {}
+    void upd(mat &w, const mat &gw) {
+        // 原始版：
+        // w'+=alpha*v
+        // gw=grad(w')
+        // v=alpha*v-gw*mu
+        // w+=v
+        // 修改版：
+        // gw=grad(w)
+        // w-=alpha*v;
+        // v=alpha*b-gw*mu;
+        // w+=v*(1+alpha);
+        mat &v = get<0>(w);
+        w -= mu * v;
+        v = mu * v - (gw + lambda * w) * alpha;
+        w += (1. + mu) * v;
+    }
 };
 
 struct adam : public optimizer_holder<2> {
@@ -138,7 +159,7 @@ struct adam : public optimizer_holder<2> {
 struct layer;
 using layerp = shared_ptr<layer>;
 
-//一层神经元的基类
+// 一层神经元的基类
 struct layer {
     string name;
     vec_batch out, grad;
@@ -147,7 +168,7 @@ struct layer {
 
     layer(const string &name) : name(name), batch_sz(0), train_mode(1) {}
 
-    //更改batch-size 和 trainmode 选项
+    // 更改batch-size 和 trainmode 选项
     void set_train_mode(const bool &new_train_mode) { train_mode = new_train_mode; }
     virtual void _resize(int){};
     void resize(int new_batch_sz) {
@@ -158,16 +179,16 @@ struct layer {
             _resize(batch_sz);
         }
     }
-    //把输入向量运算后放到Z里
+    // 把输入向量运算后放到Z里
     virtual void forward(const vec_batch &in) {}
-    //根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
+    // 根据输入向量，和答案对下一层神经元输入的偏导，算出答案对这一层神经元输入的偏导
     virtual void backward(const vec_batch &, const vec_batch &) = 0;
 
     virtual void clear_grad() {}
-    //返回这一层对应的系数，梯度矩阵的指针
+    // 返回这一层对应的系数，梯度矩阵的指针
     virtual void write(ostream &io) {}
     virtual void read(istream &io) {}
-    //以 rate 学习率梯度下降
+    // 以 rate 学习率梯度下降
     virtual void sgd(double) {}
     virtual void upd(optimizer &opt) {}
 };
@@ -276,8 +297,7 @@ struct linear : public layer {
         , weight(out_sz, in_sz)
         , grad_weight(out_sz, in_sz)
         , bias(out_sz, 1)
-        , grad_bias(out_sz, 1){
-
+        , grad_bias(out_sz, 1) {
         bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
@@ -296,6 +316,8 @@ struct linear : public layer {
             grad_weight += nxt_grad[i] * in[i].transpose();
             grad[i] = weight.transpose() * nxt_grad[i];
         }
+        grad_weight /= batch_sz;
+        grad_bias /= batch_sz;
     }
     void upd(optimizer &opt) {
         opt.upd(weight, grad_weight);
@@ -311,12 +333,12 @@ struct linear : public layer {
     }
 };
 struct batchnorm : public layer {
-    //平均值，方差
+    // 平均值，方差
     mat mean, running_mean, grad_mean;
     mat var, running_var, grad_var, inv_var;
     mat gama, grad_gama;
     mat beta, grad_beta;
-    //这两个用来辅助,inv记录1/sqrt(方差+eps)
+    // 这两个用来辅助,inv记录1/sqrt(方差+eps)
     mat grad_normalized_x;
     const double momentum;
     batchnorm(int sz, double momentum = 0.9)
@@ -346,7 +368,7 @@ struct batchnorm : public layer {
             var /= batch_sz;
             inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
-            //使用无偏方差
+            // 使用无偏方差
             running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum);
             /* running_var = running_var * momentum + var * (1 - momentum); */
 
@@ -374,6 +396,8 @@ struct batchnorm : public layer {
         grad_mean = -grad_mean.array() * inv_var.array();
         for (int i = 0; i < batch_sz; i++)
             grad[i].array() += (grad_mean.array() + 2 * grad_var.array() * (in[i] - mean).array()) / batch_sz;
+        grad_beta /= batch_sz;
+        grad_gama /= batch_sz;
     }
     void clear_grad() {
         grad_gama.setZero();
@@ -505,19 +529,20 @@ struct data_set {
 //}}}
 //{{{ Trainning
 
-void upd(optimizer &opt,const data_set &data, layer_seq &net, int batch_sz, int epoch,
-          function<double(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
+void upd(optimizer &opt, const data_set &data, layer_seq &net, int batch_sz, int epoch,
+         function<double(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
     int t0 = clock();
-    double tloss = 0, mn = INF;
+    double tloss = 0, mult = 1, mn = INF;
     for (int i = 1; i <= epoch; i++) {
         auto tmp = data.get_train_batch(batch_sz);
-        net.upd(opt,tmp);
+        net.upd(opt, tmp);
+        mult *= 0.9;
         tloss = tloss * 0.9 + err_func(net.layers.back()->out, tmp.second) * 0.1;
         if (i % 100 == 0) {
             cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
-            cerr << "Loss: " << tloss << endl;
+            cerr << "Loss: " << tloss / (1. - mult) << endl;
             if (i % 1000 == 0) {
                 net.set_train_mode(0);
                 double sum = 0;

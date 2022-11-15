@@ -6,7 +6,7 @@ int main() {
     cin.tie(0);
     layer_seq FCN;
 
-    FCN.add(make_shared<linear>(64, 128));
+    FCN.add(make_shared<linear>(2, 128));
     FCN.add(make_shared<hardswish>());
     /* FCN.add(make_shared<batchnorm>(128)); */
 
@@ -16,33 +16,24 @@ int main() {
     FCN.add(make_shared<linear>(128, 1));
     FCN.add(make_shared<sigmoid>());
 
-    /* FCN.add(make_shared<linear>(20, 20)); */
-    /* FCN.add(make_shared<hardswish>()); */
-    /* /1* FCN.add(make_shared<batchnorm>(20)); *1/ */
-    /* FCN.add(make_shared<linear>(20, 20)); */
-    /* FCN.add(make_shared<hardswish>()); */
-    /* FCN.add(make_shared<linear>(20, 20)); */
-    /* FCN.add(make_shared<hardswish>()); */
-    /* FCN.add(make_shared<linear>(20, 1)); */
-
-    /* FCN.add(make_shared<sigmoid>()); */
     batch data;
     for (int i = 1; i <= 10000; i++) {
-        /* VectorXd in(2), out(1); */
-        /* double x = rd(-1, 1), y = rd(-1, 1); */
-        /* in << x, y; */
-        /* out << (x * x + y * y <= 0.5 && x * x + y * y >= 0.3 ? 1 : 0); */
-
-        VectorXd in(64), out(1);
-        for (auto &x : in) x = rd(-1, 1);
-        out(0) = in.sum() > 0;
+        VectorXd in(2), out(1);
+        double x = rd(-1, 1), y = rd(-1, 1);
+        in << x, y;
+        out << (x * x + y * y <= 0.5 && x * x + y * y >= 0.3 ? 1 : 0);
+        //
+        // VectorXd in(64), out(1);
+        // for (auto &x : in) x = rd(-1, 1);
+        // out(0) = in.sum() > 0;
 
         data.first.push_back(in);
         data.second.push_back(out);
     }
     data_set sliced(data);
-    adam opt;
-    upd(opt,sliced,FCN,32,10000,sqrtvariance);
+    adam ada;
+    nesterov nes(0.01, 0.9, 0.01);
+    upd(ada, sliced, FCN, 32, 10000, crossentropy_2);
     /* adam(sliced, FCN, 32, 10000, sqrtvariance); */
     /* data_set sliced_data(data); */
     /* /1* sgd( *1/ */
