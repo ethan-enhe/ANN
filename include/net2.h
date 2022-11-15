@@ -369,8 +369,8 @@ struct batchnorm : public layer {
             inv_var = rsqrt(var.array() + EPS);
             running_mean = running_mean * momentum + mean * (1 - momentum);
             // 使用无偏方差
-            running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum);
-            /* running_var = running_var * momentum + var * (1 - momentum); */
+            // running_var = running_var * momentum + var * batch_sz / (batch_sz - 1) * (1 - momentum);
+            running_var = running_var * momentum + var * (1 - momentum);
 
             for (int i = 0; i < batch_sz; i++)
                 out[i] = (in[i] - mean).array() * inv_var.array() * gama.array() + beta.array();
