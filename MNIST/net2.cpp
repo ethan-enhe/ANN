@@ -101,7 +101,6 @@ int main() {
     /* net.readf("./model.txt"); */
     net.set_train_mode(0);
     cerr << net.shape();
-    cerr << "Thread:" << Eigen::nbThreads() << endl;
 
     vector<double> labels, _labels;
     vector<vector<double>> images, _images;

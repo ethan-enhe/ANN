@@ -12,45 +12,45 @@
 using namespace Eigen;
 using namespace std;
 
-using vec = VectorXd;
-using mat = MatrixXd;
+using vec = VectorXf;
+using mat = MatrixXf;
 using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
-const double INF = 100;
-const double EPS = 1e-8;
+const float INF = 100;
+const float EPS = 1e-8;
 
 //{{{ Random
 mt19937_64 mr(chrono::system_clock::now().time_since_epoch().count());
-double rd(double l, double r) { return uniform_real_distribution<double>(l, r)(mr); }
-double nd(double l, double r) { return normal_distribution<double>(l, r)(mr); }
+float rd(float l, float r) { return uniform_real_distribution<float>(l, r)(mr); }
+float nd(float l, float r) { return normal_distribution<float>(l, r)(mr); }
 int ri(int l, int r) { return uniform_int_distribution<int>(l, r)(mr); }
 //}}}
 //{{{ Utils
 vec make_vec(const vector<double> &x) {
-    VectorXd res;
+    vec res;
     res.resize(x.size());
     for (int i = 0; i < (int)x.size(); i++) res(i) = x[i];
     return res;
 }
 //}}}
 //{{{ Error Function
-double mylog(double x) {
+float mylog(float x) {
     if (x == 0) return -INF;
     return log(x);
 }
-double variance(const vec_batch &out, const vec_batch &label) {
-    auto square = [](double x) { return x * x; };
+float variance(const vec_batch &out, const vec_batch &label) {
+    auto square = [](float x) { return x * x; };
     const int batch_sz = out.size();
-    double res = 0;
+    float res = 0;
     for (int i = 0; i < batch_sz; i++)
         for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
 
     return res / batch_sz / out[0].rows();
 }
-double sqrtvariance(const vec_batch &out, const vec_batch &label) {
-    auto square = [](double x) { return x * x; };
+float sqrtvariance(const vec_batch &out, const vec_batch &label) {
+    auto square = [](float x) { return x * x; };
     const int batch_sz = out.size();
-    double res = 0, ans = 0;
+    float res = 0, ans = 0;
     for (int i = 0; i < batch_sz; i++) {
         for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
         ans += sqrt(res / out[i].rows());
@@ -59,25 +59,25 @@ double sqrtvariance(const vec_batch &out, const vec_batch &label) {
     return ans / batch_sz;
 }
 // 分2类，交叉熵
-double crossentropy_2(const vec_batch &out, const vec_batch &label) {
+float crossentropy_2(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
-    double res = 0;
+    float res = 0;
     for (int i = 0; i < batch_sz; i++)
         for (int j = 0; j < out[i].rows(); j++)
             res -= label[i](j) * mylog(out[i](j)) + (1. - label[i](j)) * mylog(1. - out[i](j));
     return res / batch_sz;
 }
-double crossentropy_k(const vec_batch &out, const vec_batch &label) {
+float crossentropy_k(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
-    double res = 0;
+    float res = 0;
     for (int i = 0; i < batch_sz; i++)
         for (int j = 0; j < out[i].rows(); j++) res -= label[i](j) * mylog(out[i](j));
 
     return res / batch_sz;
 }
-double chk_k(const vec_batch &out, const vec_batch &label) {
+float chk_k(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
-    double res = 0;
+    float res = 0;
     for (int i = 0; i < batch_sz; i++) {
         int mx = 0;
         for (int j = 0; j < out[i].rows(); j++)
@@ -86,9 +86,9 @@ double chk_k(const vec_batch &out, const vec_batch &label) {
     }
     return -res / batch_sz;
 }
-double chk_2(const vec_batch &out, const vec_batch &label) {
+float chk_2(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
-    double res = 0;
+    float res = 0;
     for (int i = 0; i < batch_sz; i++) {
         for (int j = 0; j < out[i].rows(); j++) res += (out[i](j) > 0.5) == (label[i](j) > 0.5);
     }
@@ -115,13 +115,13 @@ struct optimizer_holder : public optimizer {
 };
 
 struct sgd : public optimizer_holder<0> {
-    double lr, lambda;
-    sgd(double lr = 0.01, double lambda = 0) : lr(lr), lambda(lambda) {}
+    float lr, lambda;
+    sgd(float lr = 0.01, float lambda = 0) : lr(lr), lambda(lambda) {}
     void upd(mat &w, const mat &gw) { w -= (gw + w * lambda) * lr; }
 };
 struct nesterov : public optimizer_holder<1> {
-    double alpha, mu, lambda;
-    nesterov(double alpha = 0.01, double mu = 0.9, double lambda = 0) : alpha(alpha), mu(mu), lambda(lambda) {}
+    float alpha, mu, lambda;
+    nesterov(float alpha = 0.01, float mu = 0.9, float lambda = 0) : alpha(alpha), mu(mu), lambda(lambda) {}
     void upd(mat &w, const mat &gw) {
         // 原始版：
         // w'+=alpha*v
@@ -141,9 +141,9 @@ struct nesterov : public optimizer_holder<1> {
 };
 
 struct adam : public optimizer_holder<2> {
-    double lr, rho1, rho2, eps;
-    double mult1, mult2;
-    adam(double lr = 0.001, double rho1 = 0.9, double rho2 = 0.999, double eps = 1e-6)
+    float lr, rho1, rho2, eps;
+    float mult1, mult2;
+    adam(float lr = 0.001, float rho1 = 0.9, float rho2 = 0.999, float eps = 1e-6)
         : lr(lr), rho1(rho1), rho2(rho2), eps(eps), mult1(1), mult2(1) {}
     void upd(mat &w, const mat &gw) {
         mat &s = get<0>(w), &r = get<1>(w);
@@ -189,7 +189,7 @@ struct layer {
     virtual void write(ostream &io) {}
     virtual void read(istream &io) {}
     // 以 rate 学习率梯度下降
-    virtual void sgd(double) {}
+    virtual void sgd(float) {}
     virtual void upd(optimizer &opt) {}
 };
 
@@ -198,38 +198,38 @@ struct layer {
 struct sigmoid : public layer {
     sigmoid() : layer("sigmoid") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return 1. / (exp(-x) + 1); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x) ->float{ return 1. / (exp(-x) + 1); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return x * (1. - x); }));
+            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x) ->float{ return x * (1. - x); }));
     }
 };
 struct th : public layer {
     th() : layer("tanh") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return tanh(x); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x) { return tanh(x); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](double x) { return 1. - x * x; }));
+            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x)->float { return 1. - x * x; }));
     }
 };
 struct relu : public layer {
     relu() : layer("relu") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](double x) { return max(0., x); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x)->float { return max((float)0, x); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double { return x < 0 ? 0 : 1; }));
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](float x) -> float { return x < 0 ? 0 : 1; }));
     }
 };
 struct hardswish : public layer {
     hardswish() : layer("hardswish") {}
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++)
-            out[i] = in[i].unaryExpr([](double x) -> double {
+            out[i] = in[i].unaryExpr([](float x) -> float {
                 if (x >= 3) return x;
                 if (x <= -3) return 0;
                 return x * (x + 3) / 6;
@@ -237,7 +237,7 @@ struct hardswish : public layer {
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double {
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](float x) -> float {
                 if (x >= 3) return 1;
                 if (x <= -3) return 0;
                 return x / 3 + 0.5;
@@ -248,12 +248,12 @@ struct swish : public layer {
     swish() : layer("swish") {}
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++)
-            out[i] = in[i].unaryExpr([](double x) -> double { return x / (exp(-x) + 1); });
+            out[i] = in[i].unaryExpr([](float x) -> float { return x / (exp(-x) + 1); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double {
-                double ex = std::exp(x);
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](float x) -> float {
+                float ex = std::exp(x);
                 return ex * (x + ex + 1) / (ex + 1) / (ex + 1);
             }));
     }
@@ -262,13 +262,13 @@ struct mish : public layer {
     mish() : layer("mish") {}
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++)
-            out[i] = in[i].unaryExpr([](double x) -> double { return x * tanh(log(1 + exp(x))); });
+            out[i] = in[i].unaryExpr([](float x) -> float { return x * tanh(log(1 + exp(x))); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](double x) -> double {
-                double ex = exp(x);
-                double fm = (2 * ex + ex * ex + 2);
+            grad[i] = nxt_grad[i].cwiseProduct(in[i].unaryExpr([](float x) -> float {
+                float ex = exp(x);
+                float fm = (2 * ex + ex * ex + 2);
                 return ex * (4 * (x + 1) + 4 * ex * ex + ex * ex * ex + ex * (4 * x + 6)) / fm / fm;
             }));
     }
@@ -340,8 +340,8 @@ struct batchnorm : public layer {
     mat beta, grad_beta;
     // 这两个用来辅助,inv记录1/sqrt(方差+eps)
     mat grad_normalized_x;
-    const double momentum;
-    batchnorm(int sz, double momentum = 0.9)
+    const float momentum;
+    batchnorm(int sz, float momentum = 0.9)
         : layer("batchnorm " + to_string(sz))
         , mean(sz, 1)
         , running_mean(sz, 1)
@@ -528,11 +528,10 @@ struct data_set {
 };
 //}}}
 //{{{ Trainning
-
 void upd(optimizer &opt, const data_set &data, layer_seq &net, int batch_sz, int epoch,
-         function<double(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
+         function<float(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
     int t0 = clock();
-    double tloss = 0, mult = 1, mn = INF;
+    float tloss = 0, mult = 1, mn = INF;
     for (int i = 1; i <= epoch; i++) {
         auto tmp = data.get_train_batch(batch_sz);
         net.upd(opt, tmp);
@@ -540,12 +539,12 @@ void upd(optimizer &opt, const data_set &data, layer_seq &net, int batch_sz, int
         tloss = tloss * 0.9 + err_func(net.layers.back()->out, tmp.second) * 0.1;
         if (i % 100 == 0) {
             cerr << "-------------------------" << endl;
-            cerr << "Time elapse: " << (double)(clock() - t0) / CLOCKS_PER_SEC << endl;
+            cerr << "Time elapse: " << (float)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
             cerr << "Loss: " << tloss / (1. - mult) << endl;
             if (i % 1000 == 0) {
                 net.set_train_mode(0);
-                double sum = 0;
+                float sum = 0;
                 for (int j = 0; j < (int)data.valid.first.size(); j++) {
                     batch tmp = {{data.valid.first[j]}, {data.valid.second[j]}};
                     sum += err_func(net.forward(tmp.first), tmp.second);
