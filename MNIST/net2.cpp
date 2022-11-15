@@ -102,7 +102,6 @@ int main() {
     net.set_train_mode(0);
     cerr << net.shape();
     cerr << "Thread:" << Eigen::nbThreads() << endl;
-    /* net.readf("model.txt"); */
 
     vector<double> labels, _labels;
     vector<vector<double>> images, _images;
@@ -117,7 +116,6 @@ int main() {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
         data.valid.first.push_back(make_vec(_images[i]));
-        /* data.valid.first.push_back(make_vec(pool(_images[i]))); */
         data.valid.second.push_back(make_vec(out));
         cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
     };
@@ -128,14 +126,10 @@ int main() {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
         data.train.first.push_back(make_vec(images[i]));
-        /* data.train.first.push_back(make_vec(pool(images[i]))); */
         data.train.second.push_back(make_vec(out));
     }
-    /* sgd( */
-    /*     data, net, 128, 50000, [](int x) { return 1. / 128 / 10; }, chk_k); */
     adam opt;
-    upd(opt,data, net, 128, 100000, chk_k, "model.txt");
-    /* adam(data, net, 128, 100000, chk_k, "model.txt"); */
+    upd(opt, data, net, 128, 100000, chk_k, "model.txt");
 
     return 0;
 }
