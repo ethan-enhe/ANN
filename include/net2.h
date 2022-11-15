@@ -141,15 +141,15 @@ struct nesterov : public optimizer_holder<1> {
 };
 
 struct adam : public optimizer_holder<2> {
-    float lr, rho1, rho2, eps;
+    float lr, rho1, rho2, eps, lambda;
     float mult1, mult2;
-    adam(float lr = 0.001, float rho1 = 0.9, float rho2 = 0.999, float eps = 1e-6)
-        : lr(lr), rho1(rho1), rho2(rho2), eps(eps), mult1(1), mult2(1) {}
+    adam(float lr = 0.001, float rho1 = 0.9, float rho2 = 0.999, float eps = 1e-6, float lambda = 0)
+        : lr(lr), rho1(rho1), rho2(rho2), eps(eps), lambda(lambda), mult1(1), mult2(1) {}
     void upd(mat &w, const mat &gw) {
         mat &s = get<0>(w), &r = get<1>(w);
         mult1 *= rho1, mult2 *= rho2;
-        s = s * rho1 + gw * (1. - rho1);
-        r = r * rho2 + gw.cwiseAbs2() * (1. - rho2);
+        s = s * rho1 + (gw + w * lambda) * (1. - rho1);
+        r = r * rho2 + (gw + w * lambda).cwiseAbs2() * (1. - rho2);
         w.array() -= lr * s.array() / (sqrt(r.array() / (1. - mult2) + eps)) / (1. - mult1);
     }
 };
@@ -198,11 +198,12 @@ struct layer {
 struct sigmoid : public layer {
     sigmoid() : layer("sigmoid") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x) ->float{ return 1. / (exp(-x) + 1); });
+        for (int i = 0; i < batch_sz; i++)
+            out[i] = in[i].unaryExpr([](float x) -> float { return 1. / (exp(-x) + 1); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x) ->float{ return x * (1. - x); }));
+            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x) -> float { return x * (1. - x); }));
     }
 };
 struct th : public layer {
@@ -212,13 +213,13 @@ struct th : public layer {
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
-            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x)->float { return 1. - x * x; }));
+            grad[i] = nxt_grad[i].cwiseProduct(out[i].unaryExpr([](float x) -> float { return 1. - x * x; }));
     }
 };
 struct relu : public layer {
     relu() : layer("relu") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x)->float { return max((float)0, x); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x) -> float { return max((float)0, x); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)
@@ -247,8 +248,7 @@ struct hardswish : public layer {
 struct swish : public layer {
     swish() : layer("swish") {}
     void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++)
-            out[i] = in[i].unaryExpr([](float x) -> float { return x / (exp(-x) + 1); });
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i].unaryExpr([](float x) -> float { return x / (exp(-x) + 1); });
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++)

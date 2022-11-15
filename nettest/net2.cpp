@@ -18,7 +18,7 @@ int main() {
 
     batch data;
     for (int i = 1; i <= 10000; i++) {
-        VectorXd in(2), out(1);
+        vec in(2), out(1);
         double x = rd(-1, 1), y = rd(-1, 1);
         in << x, y;
         out << (x * x + y * y <= 0.5 && x * x + y * y >= 0.3 ? 1 : 0);
