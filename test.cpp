@@ -1,7 +1,9 @@
 // #pragma GCC optimize("O3,unroll-loops")
 // #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 // #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
-#include <vector>
+#include <omp.h>
+
+#include <ctime>
 #ifdef LOCAL
 #define dbg(x) cerr << #x << " = " << (x) << endl
 #else
@@ -112,16 +114,15 @@ const ll MXN = 1e6 + 5;
 using namespace Eigen;
 using vec = VectorXd;
 using mat = MatrixXd;
-vec v;
-mat m;
+mat conv(const mat &x, const mat &y) {
+    const int rr = x.rows() - y.rows() + 1, rc = x.cols() - y.cols() + 1;
+    mat res = mat::Zero(rr, rc);
+#pragma loop(hint_parallel(0))
+    for (int b = 0; b < y.cols(); b++)
+        for (int a = 0; a < y.rows(); a++) res += x.block(a, b, rr, rc) * y(a, b);
+    return res;
+}
 int main() {
-    v.resize(10);
-    m.resize(10,1);
-    v.setZero();
-    m.setZero();
-    m(1,0)=1;
-    v += m;
-    cout << v << endl;
 
     return 0;
 }

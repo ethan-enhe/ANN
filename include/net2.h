@@ -1,6 +1,6 @@
 #ifndef NET_H
 #define NET_H
-
+#define NDEBUG
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
@@ -16,7 +16,7 @@ using vec = VectorXf;
 using mat = MatrixXf;
 using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
-const float INF = 100;
+const float INF = 1e8;
 const float EPS = 1e-8;
 
 //{{{ Random
@@ -283,6 +283,15 @@ struct softmax : public layer {
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) { assert(0); }
 };
+struct same : public layer {
+    same() : layer("same") {}
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++) out[i] = in[i];
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        for (int i = 0; i < batch_sz; i++) grad[i] = nxt_grad[i];
+    }
+};
 //}}}
 //{{{ Layer to be trained
 struct linear : public layer {
@@ -422,21 +431,48 @@ struct batchnorm : public layer {
         for (auto &i : running_var.reshaped()) io.read((char *)&i, sizeof(i));
     }
 };
-struct same : public layer {
-    same() : layer("same") {}
-    void forward(const vec_batch &in) {
-        for (int i = 0; i < batch_sz; i++) out[i] = in[i];
+struct conv : public layer {
+    vector<vector<mat>> core;
+    vector<vector<float>> bias;
+    mat convolution(const mat &x, const mat &y) {
+        const int rr = x.rows() - y.rows() + 1, rc = x.cols() - y.cols() + 1;
+        mat res = mat::Zero(rr, rc);
+        for (int b = 0; b < y.cols(); b++)
+            for (int a = 0; a < y.rows(); a++) res += x.block(a, b, rr, rc) * y(a, b);
+        return res;
     }
-    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
-        for (int i = 0; i < batch_sz; i++) grad[i] = nxt_grad[i];
-    }
+    const int in_channel, in_rows, in_cols;
+    const int out_channel, out_rows, out_cols;
+    const int core_rows, core_cols;
+    conv(int in_channel, int in_rows, int in_cols, int out_channel, int out_rows, int out_cols, int core_rows,
+         int core_cols)
+        : layer("conv " + to_string(in_rows) + " * " + to_string(in_cols) + " * " + to_string(in_channel) + " -> " +
+                to_string(out_rows) + " * " + to_string(out_cols) + " * " + to_string(out_channel))
+        , in_channel(in_channel)
+        , in_rows(in_rows)
+        , in_cols(in_cols)
+        , out_channel(out_channel)
+        , out_rows(out_rows)
+        , out_cols(out_cols)
+        , core_rows(core_rows)
+        , core_cols(core_cols) {}
 };
 //}}}
-//{{{ Layers Sequnce
-struct layer_seq {
+//{{{ Layers uequnce
+struct net {
+    virtual string shape() = 0;
+    virtual void set_train_mode(const bool &) = 0;
+    virtual vec_batch forward(const vec_batch &) = 0;
+    virtual vec_batch backward(const vec_batch &) = 0;
+    virtual void upd(optimizer &, const batch &) = 0;
+    virtual void writef(const string &f) = 0;
+    virtual void readf(const string &f) = 0;
+    virtual vec_batch &out() = 0;
+};
+struct sequential : public net {
     int batch_sz;
     vector<layerp> layers;
-    layer_seq() : batch_sz(0) {
+    sequential() : batch_sz(0) {
         layerp x = make_shared<same>();
         x->name = "input";
         layers.emplace_back(x);
@@ -450,7 +486,6 @@ struct layer_seq {
     void set_train_mode(const bool &new_train_mod) {
         for (auto &l : layers) l->set_train_mode(new_train_mod);
     }
-
     vec_batch forward(const vec_batch &input) {
         if ((int)input.size() != batch_sz) {
             batch_sz = input.size();
@@ -487,6 +522,7 @@ struct layer_seq {
         for (int i = 0; i < layer_sz; i++) layers[i]->read(fin);
         fin.close();
     }
+    vec_batch &out() { return layers.back()->out; }
 };
 //}}}
 //{{{ Dataset
@@ -528,7 +564,7 @@ struct data_set {
 };
 //}}}
 //{{{ Trainning
-void upd(optimizer &opt, const data_set &data, layer_seq &net, int batch_sz, int epoch,
+void upd(optimizer &opt, const data_set &data, net &net, int batch_sz, int epoch,
          function<float(const vec_batch &, const vec_batch &)> err_func, const string &save_file = "") {
     int t0 = clock();
     float tloss = 0, mult = 1, mn = INF;
@@ -536,7 +572,7 @@ void upd(optimizer &opt, const data_set &data, layer_seq &net, int batch_sz, int
         auto tmp = data.get_train_batch(batch_sz);
         net.upd(opt, tmp);
         mult *= 0.9;
-        tloss = tloss * 0.9 + err_func(net.layers.back()->out, tmp.second) * 0.1;
+        tloss = tloss * 0.9 + err_func(net.out(), tmp.second) * 0.1;
         if (i % 100 == 0) {
             cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (float)(clock() - t0) / CLOCKS_PER_SEC << endl;

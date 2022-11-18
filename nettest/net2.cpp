@@ -4,7 +4,7 @@ using namespace std;
 int main() {
     ios::sync_with_stdio(0);
     cin.tie(0);
-    layer_seq FCN;
+    sequential FCN;
 
     FCN.add(make_shared<linear>(2, 128));
     FCN.add(make_shared<hardswish>());
