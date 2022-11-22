@@ -77,25 +77,21 @@ vector<double> pool(const vector<double>& x) {
     return res;
 }
 
-layer_seq net;
+sequential net;
 data_set data;
 int main() {
     net.add(make_shared<linear>(28 * 28, 300));
     net.add(make_shared<batchnorm>(300));
 
-    net.add(make_shared<swish>());
+    net.add(make_shared<relu>());
     net.add(make_shared<linear>(300, 128));
 
-    net.add(make_shared<swish>());
+    net.add(make_shared<relu>());
     net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 128));
+    net.add(make_shared<linear>(128, 64));
 
-    net.add(make_shared<swish>());
-    net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 128));
-
-    net.add(make_shared<swish>());
-    net.add(make_shared<linear>(128, 10));
+    net.add(make_shared<relu>());
+    net.add(make_shared<linear>(64, 10));
 
     net.add(make_shared<softmax>());
     /* net.readf("./model.txt"); */

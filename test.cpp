@@ -12,7 +12,8 @@
 #endif
 #include <bits/stdc++.h>
 
-#include "Eigen/Core"
+#include <Eigen/Core>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 using namespace std;
 //{{{ Def
@@ -114,15 +115,27 @@ const ll MXN = 1e6 + 5;
 using namespace Eigen;
 using vec = VectorXd;
 using mat = MatrixXd;
+using ten = Tensor<float, 3>;
 mat conv(const mat &x, const mat &y) {
     const int rr = x.rows() - y.rows() + 1, rc = x.cols() - y.cols() + 1;
     mat res = mat::Zero(rr, rc);
-#pragma loop(hint_parallel(0))
     for (int b = 0; b < y.cols(); b++)
-        for (int a = 0; a < y.rows(); a++) res += x.block(a, b, rr, rc) * y(a, b);
+        for (int a = 0; a < y.rows(); a++) {
+            // for (int j = 0; j < rc; j++)
+            //     for (int i = 0; i < rr; i++) res(i, j) += x(i + a, j + b);
+            res += x.block(a, b, rr, rc) * y(a, b);
+        }
     return res;
 }
 int main() {
+    mat x = mat::Random(10000, 1000);
+    mat y = mat::Random(10, 10);
+    // mat y = mat::Random(1000 - 100, 1000 - 10);
+    mat z = conv(x, y);
+
+    ten t(2,2,3);
+    t(2,1,3)=1;
+    cout<<t;
 
     return 0;
 }

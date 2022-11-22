@@ -52,6 +52,7 @@ float sqrtvariance(const vec_batch &out, const vec_batch &label) {
     const int batch_sz = out.size();
     float res = 0, ans = 0;
     for (int i = 0; i < batch_sz; i++) {
+        res = 0;
         for (int j = 0; j < out[i].rows(); j++) res += square(out[i](j) - label[i](j));
         ans += sqrt(res / out[i].rows());
     }
@@ -456,9 +457,25 @@ struct conv : public layer {
         , out_cols(out_cols)
         , core_rows(core_rows)
         , core_cols(core_cols) {}
+    // 输入是 channel1mat,channel2mat,每个mat 都是colwise
+    void forward(const vec_batch &in) {
+        for(int i=0;i<batch_sz;i++){
+
+        }
+    }
+    void clear_grad() {
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+    }
+    void upd(optimizer &opt) {
+    }
+    void write(ostream &io) {
+    }
+    void read(istream &io) {
+    }
 };
 //}}}
-//{{{ Layers uequnce
+//{{{ Layers Sequence
 struct net {
     virtual string shape() = 0;
     virtual void set_train_mode(const bool &) = 0;
@@ -573,7 +590,7 @@ void upd(optimizer &opt, const data_set &data, net &net, int batch_sz, int epoch
         net.upd(opt, tmp);
         mult *= 0.9;
         tloss = tloss * 0.9 + err_func(net.out(), tmp.second) * 0.1;
-        if (i % 100 == 0) {
+        if (i % 1000 == 0) {
             cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (float)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;
