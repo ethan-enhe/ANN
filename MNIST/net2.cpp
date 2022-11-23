@@ -78,7 +78,7 @@ vector<double> pool(const vector<double>& x) {
 }
 
 sequential net;
-data_set data;
+data_set dat;
 int main() {
     net.add(make_shared<linear>(28 * 28, 300));
     net.add(make_shared<batchnorm>(300));
@@ -94,7 +94,7 @@ int main() {
     net.add(make_shared<linear>(64, 10));
 
     net.add(make_shared<softmax>());
-    /* net.readf("./model.txt"); */
+    net.readf("./model.txt");
     net.set_train_mode(0);
     cerr << net.shape();
 
@@ -110,8 +110,8 @@ int main() {
     for (int i = 0; i < _images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
-        data.valid.first.push_back(make_vec(_images[i]));
-        data.valid.second.push_back(make_vec(out));
+        dat.valid.first.push_back(make_vec(_images[i]));
+        dat.valid.second.push_back(make_vec(out));
         cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
     };
     cout << cnt / _images.size() << endl;
@@ -120,11 +120,12 @@ int main() {
     for (int i = 0; i < images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
-        data.train.first.push_back(make_vec(images[i]));
-        data.train.second.push_back(make_vec(out));
+        dat.train.first.push_back(make_vec(images[i]));
+        dat.train.second.push_back(make_vec(out));
     }
-    adam opt;
-    upd(opt, data, net, 128, 100000, chk_k, "model.txt");
+    // adam opt;
+    nesterov opt(0.01, 0.9, 0.002);
+    upd(opt, dat, net, 128, 100000, chk_k, "model.txt");
 
     return 0;
 }

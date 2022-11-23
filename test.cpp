@@ -1,9 +1,8 @@
 // #pragma GCC optimize("O3,unroll-loops")
 // #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
 // #pragma GCC target("sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2,bmi,bmi2,lzcnt,popcnt")
-#include <omp.h>
+// #define EIGEN_VECTORIZE_SSE4_2
 
-#include <ctime>
 #ifdef LOCAL
 #define dbg(x) cerr << #x << " = " << (x) << endl
 #else
@@ -16,126 +15,29 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 
 using namespace std;
-//{{{ Def
-#define fi first
-#define se second
-#define all(x) (x).begin(), (x).end()
-#define unq(x) (x).erase(unique(all(x)), (x).end())
-#define tpl template <typename T>
-
-using ll = long long;
-using ull = unsigned long long;
-using db = double;
-using ld = long double;
-using pi = pair<ll, ll>;
-//}}}
-//{{{ Func
-tpl pair<T, T> &operator+=(pair<T, T> &x, const pair<T, T> &y) { return x.fi += y.fi, x.se += y.se, x; }
-tpl pair<T, T> operator+(const pair<T, T> &x, const pair<T, T> &y) { return {x.fi + y.fi, x.se + y.se}; }
-tpl pair<T, T> &operator-=(pair<T, T> &x, const pair<T, T> &y) { return x.fi -= y.fi, x.se -= y.se, x; }
-tpl pair<T, T> operator-(const pair<T, T> &x, const pair<T, T> &y) { return {x.fi - y.fi, x.se - y.se}; }
-tpl pair<T, T> &operator*=(pair<T, T> &x, const ll &y) { return x.fi *= y, x.se *= y, x; }
-tpl pair<T, T> operator*(const pair<T, T> &x, const ll &y) { return {x.fi * y, x.se * y}; }
-tpl istream &operator>>(istream &is, pair<T, T> &y) { return is >> y.fi >> y.se; }
-tpl ostream &operator<<(ostream &os, const pair<T, T> &y) { return os << '(' << y.fi << ',' << y.se << ')'; }
-tpl T qpow(T x, ll y) {
-    T r(1);
-    while (y) {
-        if (y & 1) r = r * x;
-        x = x * x, y >>= 1;
-    }
-    return r;
-}
-ll gcd(ll a, ll b) {
-    if (a < 0) a = -a;
-    if (b < 0) b = -b;
-    if (!a || !b) return a | b;
-    ll U = __builtin_ctzll(a), V = __builtin_ctzll(b);
-    a >>= U, b >>= V;
-    if (U > V) U = V;
-    while (a) {
-        if (a < b) swap(a, b);
-        a -= b;
-        a >>= __builtin_ctzll(a);
-    }
-    return b << U;
-}
-tpl void umx(T &x, const T &y) { x = max(x, y); }
-tpl void umn(T &x, const T &y) { x = min(x, y); }
-bool inrng(const ll &x, const ll &l, const ll &r) { return l <= x && x <= r; }
-bool insqr(const pi &x, const pi &lt, const pi &rb) {
-    return lt.fi <= x.fi && x.fi <= rb.fi && lt.se <= x.se && x.se <= rb.se;
-}
-void setp(const ll &x) {
-    cout.flags(ios::fixed);
-    cout.precision(x);
-}
-template <typename T = ll>
-T nxt() {
-    T x;
-    cin >> x;
-    return x;
-}
-mt19937_64 mr(chrono::system_clock::now().time_since_epoch().count());
-ll ri(const ll &l, const ll &r) { return uniform_int_distribution<ll>(l, r)(mr); }
-ld rd(const ld &l, const ld &r) { return uniform_real_distribution<ld>(l, r)(mr); }
-//}}}
-const ll P = 1e9 + 7;
-//{{{ Type
-inline int redu(const int &x) { return x >= P ? x - P : x; }
-inline int incr(const int &x) { return x + ((x >> 31) & P); }
-struct mod {
-    int v;
-    mod() {}
-    tpl mod(const T &_v) : v(_v) { assert(_v >= 0 && _v < P); }
-    explicit operator ll() const { return v; }
-    explicit operator int() const { return v; }
-    mod &operator+=(const mod &y) { return v = redu(v + y.v), *this; }
-    mod &operator-=(const mod &y) { return v = incr(v - y.v), *this; }
-    mod &operator*=(const mod &y) { return v = (ll)v * y.v % P, *this; }
-    mod &operator/=(const mod &y) { return v = (ll)v * qpow(y, P - 2).v % P, *this; }
-    mod operator+(const mod &y) const { return mod(*this) += y; }
-    mod operator-(const mod &y) const { return mod(*this) -= y; }
-    mod operator*(const mod &y) const { return mod(*this) *= y; }
-    mod operator/(const mod &y) const { return mod(*this) /= y; }
-    bool operator==(const mod &y) const { return v == y.v; }
-    bool operator!=(const mod &y) const { return v != y.v; }
-    friend istream &operator>>(istream &is, mod &y) {
-        ll x;
-        is >> x;
-        return y.v = incr(x % P), is;
-    }
-    friend ostream &operator<<(ostream &os, const mod &y) { return os << y.v; }
-};
-//}}}
-const char nl = '\n';
-const ll INF = 1e18;
-const ll MXN = 1e6 + 5;
 
 using namespace Eigen;
-using vec = VectorXd;
-using mat = MatrixXd;
-using ten = Tensor<float, 3>;
-mat conv(const mat &x, const mat &y) {
-    const int rr = x.rows() - y.rows() + 1, rc = x.cols() - y.cols() + 1;
-    mat res = mat::Zero(rr, rc);
-    for (int b = 0; b < y.cols(); b++)
-        for (int a = 0; a < y.rows(); a++) {
-            // for (int j = 0; j < rc; j++)
-            //     for (int i = 0; i < rr; i++) res(i, j) += x(i + a, j + b);
-            res += x.block(a, b, rr, rc) * y(a, b);
-        }
-    return res;
-}
-int main() {
-    mat x = mat::Random(10000, 1000);
-    mat y = mat::Random(10, 10);
-    // mat y = mat::Random(1000 - 100, 1000 - 10);
-    mat z = conv(x, y);
+using vec = VectorXf;
+using mat = MatrixXf;
+using ten1 = Tensor<float, 1>;
+using ten2 = Tensor<float, 2>;
+using ten3 = Tensor<float, 3>;
+using ten4 = Tensor<float, 4>;
 
-    ten t(2,2,3);
-    t(2,1,3)=1;
-    cout<<t;
+int main() {
+    // Compute convolution along the second and third dimension.
+    ten4 input(3, 3, 7, 11);
+    mat kernel(2, 2);
+    ten4 output(3, 2, 6, 11);
+    ten2 x(2,2);
+    x.setRandom();
+    cout<<x<<endl;
+    cout<<(x+x.constant(1))<<endl;
+    // input.setRandom();
+    // kernel.setRandom();
+    //
+    // auto k = Map<mat>(kernel.data(), {2, 2});
+    // output = input.convolve(k, std::array<int, 2>{1, 2});
 
     return 0;
 }

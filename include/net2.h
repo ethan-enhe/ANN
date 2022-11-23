@@ -7,13 +7,15 @@
 
 #include <bits/stdc++.h>
 
-#include "../Eigen/Core"
+#include <Eigen/Core>
 
 using namespace Eigen;
 using namespace std;
 
 using vec = VectorXf;
 using mat = MatrixXf;
+using vecmap = Map<vec>;
+using matmap = Map<vec>;
 using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
 const float INF = 1e8;
@@ -309,7 +311,7 @@ struct linear : public layer {
         , bias(out_sz, 1)
         , grad_bias(out_sz, 1) {
         bias.setZero();
-        for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
+        for (auto &i : weight.reshaped()) i = nd(0, 4. / (in_sz + out_sz));
     }
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
@@ -432,48 +434,47 @@ struct batchnorm : public layer {
         for (auto &i : running_var.reshaped()) io.read((char *)&i, sizeof(i));
     }
 };
-struct conv : public layer {
-    vector<vector<mat>> core;
-    vector<vector<float>> bias;
-    mat convolution(const mat &x, const mat &y) {
-        const int rr = x.rows() - y.rows() + 1, rc = x.cols() - y.cols() + 1;
-        mat res = mat::Zero(rr, rc);
-        for (int b = 0; b < y.cols(); b++)
-            for (int a = 0; a < y.rows(); a++) res += x.block(a, b, rr, rc) * y(a, b);
-        return res;
-    }
-    const int in_channel, in_rows, in_cols;
-    const int out_channel, out_rows, out_cols;
-    const int core_rows, core_cols;
-    conv(int in_channel, int in_rows, int in_cols, int out_channel, int out_rows, int out_cols, int core_rows,
-         int core_cols)
-        : layer("conv " + to_string(in_rows) + " * " + to_string(in_cols) + " * " + to_string(in_channel) + " -> " +
-                to_string(out_rows) + " * " + to_string(out_cols) + " * " + to_string(out_channel))
-        , in_channel(in_channel)
-        , in_rows(in_rows)
-        , in_cols(in_cols)
-        , out_channel(out_channel)
-        , out_rows(out_rows)
-        , out_cols(out_cols)
-        , core_rows(core_rows)
-        , core_cols(core_cols) {}
-    // 输入是 channel1mat,channel2mat,每个mat 都是colwise
-    void forward(const vec_batch &in) {
-        for(int i=0;i<batch_sz;i++){
-
-        }
-    }
-    void clear_grad() {
-    }
-    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
-    }
-    void upd(optimizer &opt) {
-    }
-    void write(ostream &io) {
-    }
-    void read(istream &io) {
-    }
-};
+// struct conv : public layer {
+//     vector<vector<mat>> kernel;
+//     vector<vector<mat>> bias;
+//     const int in_channel, in_rows, in_cols;
+//     const int out_channel, out_rows, out_cols;
+//     const int k_rows, k_cols;
+//     conv(int in_channel, int in_rows, int in_cols, int out_channel, int out_rows, int out_cols, int k_rows, int k_cols)
+//         : layer("conv " + to_string(in_rows) + " * " + to_string(in_cols) + " * " + to_string(in_channel) + " -> " +
+//                 to_string(out_rows) + " * " + to_string(out_cols) + " * " + to_string(out_channel))
+//         , in_channel(in_channel)
+//         , in_rows(in_rows)
+//         , in_cols(in_cols)
+//         , out_channel(out_channel)
+//         , out_rows(out_rows)
+//         , out_cols(out_cols)
+//         , k_rows(k_rows)
+//         , k_cols(k_cols) {
+//         kernel.resize(in_channel);
+//         bias.resize(in_channel);
+//         for (int i = 0; i < in_channel; i++) {
+//             kernel[i].resize(out_channel);
+//             bias[i].resize(out_channel);
+//             for (int j = 0; j < out_channel; j++) {
+//                 kernel[i][j].resize(k_rows, k_cols);
+//                 for (auto &v : kernel[i][j].reshaped())
+//                     v = nd(0, 4. / (in_channel * k_rows * k_cols + out_channel * k_rows * k_cols));
+//                 bias[i][j] = mat::Zero();
+//             }
+//         }
+//     }
+//     // 输入是 channel1mat,channel2mat,每个mat 都是colwise
+//     void forward(const vec_batch &in) {
+//         for (int i = 0; i < batch_sz; i++) {
+//         }
+//     }
+//     void clear_grad() {}
+//     void backward(const vec_batch &in, const vec_batch &nxt_grad) {}
+//     void upd(optimizer &opt) {}
+//     void write(ostream &io) {}
+//     void read(istream &io) {}
+// };
 //}}}
 //{{{ Layers Sequence
 struct net {
