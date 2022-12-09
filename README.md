@@ -12,6 +12,6 @@
 ## Todos
 - [x] 网络导入导出
 - [x] 封装优化器
-- [ ] 2d 卷积层
+~~- [ ] 2d 卷积层~~
 - [ ] 3d 卷积层（tensor -> matrix）
 - [ ] max pooling 层
