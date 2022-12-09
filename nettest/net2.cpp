@@ -1,3 +1,4 @@
+#include <bits/stdc++.h>
 #include "../include/net2.h"
 
 using namespace std;
@@ -8,7 +9,7 @@ int main() {
 
     FCN.add(make_shared<linear>(2, 128));
     FCN.add(make_shared<hardswish>());
-    /* FCN.add(make_shared<batchnorm>(128)); */
+    FCN.add(make_shared<batchnorm>(128)); 
 
     FCN.add(make_shared<linear>(128, 128));
     FCN.add(make_shared<hardswish>());
@@ -33,7 +34,7 @@ int main() {
     data_set sliced(data);
     adam ada;
     nesterov nes(0.01, 0.9, 0.01);
-    upd(ada, sliced, FCN, 32, 10000, crossentropy_2);
+    upd(ada, sliced, FCN, 32, 100000, crossentropy_2);
     /* adam(sliced, FCN, 32, 10000, sqrtvariance); */
     /* data_set sliced_data(data); */
     /* /1* sgd( *1/ */

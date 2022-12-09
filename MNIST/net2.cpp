@@ -40,7 +40,6 @@ void read_Mnist_Images(string filename, vector<vector<double>>& images) {
         int number_of_images = 0;
         int n_rows = 0;
         int n_cols = 0;
-        unsigned char label;
         file.read((char*)&magic_number, sizeof(magic_number));
         file.read((char*)&number_of_images, sizeof(number_of_images));
         file.read((char*)&n_rows, sizeof(n_rows));
@@ -107,7 +106,7 @@ int main() {
 
     double cnt = 0;
     net.set_train_mode(0);
-    for (int i = 0; i < _images.size(); i++) {
+    for (int i = 0; i < (int)_images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[_labels[i]] = 1;
         dat.valid.first.push_back(make_vec(_images[i]));
@@ -117,14 +116,14 @@ int main() {
     cout << cnt / _images.size() << endl;
     net.set_train_mode(1);
 
-    for (int i = 0; i < images.size(); i++) {
+    for (int i = 0; i < (int)images.size(); i++) {
         vector<double> out = vector<double>(10, 0);
         out[labels[i]] = 1;
         dat.train.first.push_back(make_vec(images[i]));
         dat.train.second.push_back(make_vec(out));
     }
-    // adam opt;
-    nesterov opt(0.01, 0.9, 0.002);
+    adam opt;
+    // nesterov opt(0.01, 0.9, 0.002);
     upd(opt, dat, net, 128, 100000, chk_k, "model.txt");
 
     return 0;

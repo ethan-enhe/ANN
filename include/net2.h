@@ -1,5 +1,6 @@
 #ifndef NET_H
 #define NET_H
+
 #define NDEBUG
 #pragma GCC optimize("O3,unroll-loops")
 #pragma GCC target("avx2,bmi,bmi2,lzcnt,popcnt")
@@ -8,6 +9,7 @@
 #include <bits/stdc++.h>
 
 #include <Eigen/Core>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 using namespace Eigen;
 using namespace std;
@@ -15,9 +17,13 @@ using namespace std;
 using vec = VectorXf;
 using mat = MatrixXf;
 using vecmap = Map<vec>;
-using matmap = Map<vec>;
+using matmap = Map<mat>;
 using vec_batch = vector<vec>;
 using batch = pair<vec_batch, vec_batch>;
+using ten1 = Tensor<float, 1>;
+using ten2 = Tensor<float, 2>;
+using ten3 = Tensor<float, 3>;
+using ten4 = Tensor<float, 4>;
 const float INF = 1e8;
 const float EPS = 1e-8;
 
@@ -33,6 +39,10 @@ vec make_vec(const vector<double> &x) {
     res.resize(x.size());
     for (int i = 0; i < (int)x.size(); i++) res(i) = x[i];
     return res;
+}
+template <typename T>
+vecmap to_vecmap(T &x) {
+    return vecmap(x.data(), x.size());
 }
 //}}}
 //{{{ Error Function
@@ -100,32 +110,32 @@ float chk_2(const vec_batch &out, const vec_batch &label) {
 //}}}
 //{{{ Optimizer
 struct optimizer {
-    virtual void upd(mat &, const mat &) = 0;
+    virtual void upd(vecmap, const vecmap &) = 0;
 };
 
 // 一个类，用来维护每一个系数矩阵对应的额外信息，如动量之类的
 template <const int N>
 struct optimizer_holder : public optimizer {
-    unordered_map<const mat *, mat> V[N];
+    unordered_map<const float *, vec> V[N];
     template <const int I>
-    mat &get(const mat &x) {
-        auto it = V[I].find(&x);
+    vec &get(const vecmap &x) {
+        auto it = V[I].find(x.data());
         if (it != V[I].end())
             return it->second;
         else
-            return V[I][&x] = mat::Zero(x.rows(), x.cols());
+            return V[I][x.data()] = vec::Zero(x.rows(), x.cols());
     }
 };
 
 struct sgd : public optimizer_holder<0> {
     float lr, lambda;
     sgd(float lr = 0.01, float lambda = 0) : lr(lr), lambda(lambda) {}
-    void upd(mat &w, const mat &gw) { w -= (gw + w * lambda) * lr; }
+    void upd(vecmap w, const vecmap &gw) { w -= (gw + w * lambda) * lr; }
 };
 struct nesterov : public optimizer_holder<1> {
     float alpha, mu, lambda;
     nesterov(float alpha = 0.01, float mu = 0.9, float lambda = 0) : alpha(alpha), mu(mu), lambda(lambda) {}
-    void upd(mat &w, const mat &gw) {
+    void upd(vecmap w, const vecmap &gw) {
         // 原始版：
         // w'+=alpha*v
         // gw=grad(w')
@@ -136,7 +146,7 @@ struct nesterov : public optimizer_holder<1> {
         // w-=alpha*v;
         // v=alpha*b-gw*mu;
         // w+=v*(1+alpha);
-        mat &v = get<0>(w);
+        vec &v = get<0>(w);
         w -= mu * v;
         v = mu * v - (gw + lambda * w) * alpha;
         w += (1. + mu) * v;
@@ -148,8 +158,8 @@ struct adam : public optimizer_holder<2> {
     float mult1, mult2;
     adam(float lr = 0.001, float rho1 = 0.9, float rho2 = 0.999, float eps = 1e-6, float lambda = 0)
         : lr(lr), rho1(rho1), rho2(rho2), eps(eps), lambda(lambda), mult1(1), mult2(1) {}
-    void upd(mat &w, const mat &gw) {
-        mat &s = get<0>(w), &r = get<1>(w);
+    void upd(vecmap w, const vecmap &gw) {
+        vec &s = get<0>(w), &r = get<1>(w);
         mult1 *= rho1, mult2 *= rho2;
         s = s * rho1 + (gw + w * lambda) * (1. - rho1);
         r = r * rho2 + (gw + w * lambda).cwiseAbs2() * (1. - rho2);
@@ -296,20 +306,21 @@ struct same : public layer {
     }
 };
 //}}}
+
 //{{{ Layer to be trained
 struct linear : public layer {
     const int in_sz, out_sz;
     // 系数，系数梯度
     mat weight, grad_weight;
-    mat bias, grad_bias;
+    vec bias, grad_bias;
     linear(int in_sz, int out_sz)
         : layer("linear " + to_string(in_sz) + " -> " + to_string(out_sz))
         , in_sz(in_sz)
         , out_sz(out_sz)
         , weight(out_sz, in_sz)
         , grad_weight(out_sz, in_sz)
-        , bias(out_sz, 1)
-        , grad_bias(out_sz, 1) {
+        , bias(out_sz)
+        , grad_bias(out_sz) {
         bias.setZero();
         for (auto &i : weight.reshaped()) i = nd(0, 4. / (in_sz + out_sz));
     }
@@ -332,8 +343,8 @@ struct linear : public layer {
         grad_bias /= batch_sz;
     }
     void upd(optimizer &opt) {
-        opt.upd(weight, grad_weight);
-        opt.upd(bias, grad_bias);
+        opt.upd(to_vecmap(weight), to_vecmap(grad_weight));
+        opt.upd(to_vecmap(bias), to_vecmap(grad_bias));
     }
     void write(ostream &io) {
         for (auto &i : weight.reshaped()) io.write((char *)&i, sizeof(i));
@@ -346,26 +357,26 @@ struct linear : public layer {
 };
 struct batchnorm : public layer {
     // 平均值，方差
-    mat mean, running_mean, grad_mean;
-    mat var, running_var, grad_var, inv_var;
-    mat gama, grad_gama;
-    mat beta, grad_beta;
+    vec mean, running_mean, grad_mean;
+    vec var, running_var, grad_var, inv_var;
+    vec gama, grad_gama;
+    vec beta, grad_beta;
     // 这两个用来辅助,inv记录1/sqrt(方差+eps)
-    mat grad_normalized_x;
+    vec grad_normalized_x;
     const float momentum;
     batchnorm(int sz, float momentum = 0.9)
         : layer("batchnorm " + to_string(sz))
-        , mean(sz, 1)
-        , running_mean(sz, 1)
-        , grad_mean(sz, 1)
-        , var(sz, 1)
-        , running_var(sz, 1)
-        , grad_var(sz, 1)
-        , inv_var(sz, 1)
-        , gama(sz, 1)
-        , grad_gama(sz, 1)
-        , beta(sz, 1)
-        , grad_beta(sz, 1)
+        , mean(sz)
+        , running_mean(sz)
+        , grad_mean(sz)
+        , var(sz)
+        , running_var(sz)
+        , grad_var(sz)
+        , inv_var(sz)
+        , gama(sz)
+        , grad_gama(sz)
+        , beta(sz)
+        , grad_beta(sz)
         , momentum(momentum) {
         gama.setOnes();
         beta.setZero();
@@ -418,8 +429,8 @@ struct batchnorm : public layer {
         grad_var.setZero();
     }
     void upd(optimizer &opt) {
-        opt.upd(beta, grad_beta);
-        opt.upd(gama, grad_gama);
+        opt.upd(to_vecmap(beta), to_vecmap(grad_beta));
+        opt.upd(to_vecmap(gama), to_vecmap(grad_gama));
     }
     void write(ostream &io) {
         for (auto &i : gama.reshaped()) io.write((char *)&i, sizeof(i));
@@ -434,47 +445,46 @@ struct batchnorm : public layer {
         for (auto &i : running_var.reshaped()) io.read((char *)&i, sizeof(i));
     }
 };
-// struct conv : public layer {
-//     vector<vector<mat>> kernel;
-//     vector<vector<mat>> bias;
-//     const int in_channel, in_rows, in_cols;
-//     const int out_channel, out_rows, out_cols;
-//     const int k_rows, k_cols;
-//     conv(int in_channel, int in_rows, int in_cols, int out_channel, int out_rows, int out_cols, int k_rows, int k_cols)
-//         : layer("conv " + to_string(in_rows) + " * " + to_string(in_cols) + " * " + to_string(in_channel) + " -> " +
-//                 to_string(out_rows) + " * " + to_string(out_cols) + " * " + to_string(out_channel))
-//         , in_channel(in_channel)
-//         , in_rows(in_rows)
-//         , in_cols(in_cols)
-//         , out_channel(out_channel)
-//         , out_rows(out_rows)
-//         , out_cols(out_cols)
-//         , k_rows(k_rows)
-//         , k_cols(k_cols) {
-//         kernel.resize(in_channel);
-//         bias.resize(in_channel);
-//         for (int i = 0; i < in_channel; i++) {
-//             kernel[i].resize(out_channel);
-//             bias[i].resize(out_channel);
-//             for (int j = 0; j < out_channel; j++) {
-//                 kernel[i][j].resize(k_rows, k_cols);
-//                 for (auto &v : kernel[i][j].reshaped())
-//                     v = nd(0, 4. / (in_channel * k_rows * k_cols + out_channel * k_rows * k_cols));
-//                 bias[i][j] = mat::Zero();
-//             }
-//         }
-//     }
-//     // 输入是 channel1mat,channel2mat,每个mat 都是colwise
-//     void forward(const vec_batch &in) {
-//         for (int i = 0; i < batch_sz; i++) {
-//         }
-//     }
-//     void clear_grad() {}
-//     void backward(const vec_batch &in, const vec_batch &nxt_grad) {}
-//     void upd(optimizer &opt) {}
-//     void write(ostream &io) {}
-//     void read(istream &io) {}
-// };
+
+ten3 hi_dim_conv(const ten3 &input, const ten4 &kernel) {
+    int sz1 = input.dimension(1) - kernel.dimension(2) + 1;
+    int sz2 = input.dimension(2) - kernel.dimension(3) + 1;
+    ten3 res(kernel.dimension(1), sz1, sz2);
+    res.setZero();
+    for (int i = 0; i < kernel.dimension(0); i++)
+        for (int j = 0; j < kernel.dimension(1); j++)
+            res.chip(j, 0) += input.chip(i, 0).convolve(kernel.chip(i, 0).chip(j, 0), std::array<int, 2>{0, 1});
+    return res;
+}
+struct conv : public layer {
+    const int in_channel, out_channel, in_rows, in_cols;
+    const int out_rows, out_cols;
+    const int k_rows, k_cols;
+    ten4 kernel;
+    vec bias;
+    conv(int in_channel, int out_channel, int in_rows, int in_cols, int k_rows, int k_cols)
+        : layer("conv " + to_string(in_channel) + "channels * " + to_string(in_rows) + " * " + to_string(in_cols) +
+                " -> " + to_string(out_channel) + "channels * " + to_string(in_rows - k_rows + 1) + " * " +
+                to_string(in_cols - k_cols + 1))
+        , in_channel(in_channel)
+        , out_channel(out_channel)
+        , in_rows(in_rows)
+        , in_cols(in_cols)
+        , out_rows(in_rows - k_rows + 1)
+        , out_cols(in_cols - k_cols + 1)
+        , k_rows(k_rows)
+        , k_cols(k_cols)
+        , kernel(in_channel, out_channel, k_rows, k_cols)
+        , bias(out_cols) { // 在这里继续写
+        bias.setZero();
+    }
+    void forward(const vec_batch &in) {}
+    void clear_grad() {}
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {}
+    void upd(optimizer &opt) {}
+    void write(ostream &io) {}
+    void read(istream &io) {}
+};
 //}}}
 //{{{ Layers Sequence
 struct net {

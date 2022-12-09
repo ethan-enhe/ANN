@@ -24,20 +24,29 @@ using ten2 = Tensor<float, 2>;
 using ten3 = Tensor<float, 3>;
 using ten4 = Tensor<float, 4>;
 
-int main() {
-    // Compute convolution along the second and third dimension.
-    ten4 input(3, 3, 7, 11);
-    mat kernel(2, 2);
-    ten4 output(3, 2, 6, 11);
-    ten2 x(2,2);
-    x.setRandom();
-    cout<<x<<endl;
-    cout<<(x+x.constant(1))<<endl;
-    // input.setRandom();
-    // kernel.setRandom();
-    //
-    // auto k = Map<mat>(kernel.data(), {2, 2});
-    // output = input.convolve(k, std::array<int, 2>{1, 2});
+ten3 conv(const ten3 &input, const ten4 &kernel) {
+    int sz1 = input.dimension(1) - kernel.dimension(2) + 1;
+    int sz2 = input.dimension(2) - kernel.dimension(3) + 1;
+    ten3 res(kernel.dimension(1), sz1, sz2);
+    res.setZero();
+    for (int i = 0; i < kernel.dimension(0); i++)
+        for (int j = 0; j < kernel.dimension(1); j++)
+            res.chip(j, 0) += input.chip(i, 0).convolve(kernel.chip(i, 0).chip(j, 0), std::array<int, 2>{0, 1});
+    return res;
+}
 
+int main() {
+    // ten3 x(2, 2, 2), y(1, 1, 1);
+    // ten4 core(2, 1, 2, 2);
+    // x.setValues({{{1, 1}, {1, 1}}, {{1, 1}, {1, 1}}});
+    // core.setValues({{{{1, 1}, {1, 1}}}, {{{1, 1}, {1, 1}}}});
+    // cout << core.chip(0, 0);
+    // y = conv(x, core);
+    // cout << y;
+
+    mat x(3, 3);
+    x.setRandom();
+    Map<vec> y(x.data(), x.size());
+    cout<<x;
     return 0;
 }
