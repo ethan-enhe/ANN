@@ -44,9 +44,10 @@ int main() {
     // y = conv(x, core);
     // cout << y;
 
-    mat x(3, 3);
-    x.setRandom();
-    Map<vec> y(x.data(), x.size());
-    cout<<x;
+    ten3 x(1, 2, 3);
+    Tensor<float, 0> tmp = (x.chip(0, 0).sum());
+    float a=Tensor<float, 0>(x.chip(0, 0).sum())();
+    // mat x(3, 3); x.resize(3,4);
+    // TensorMap<ten3> tmp(x.data(), {4, 1, 3});
     return 0;
 }

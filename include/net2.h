@@ -16,14 +16,16 @@ using namespace std;
 
 using vec = VectorXf;
 using mat = MatrixXf;
-using vecmap = Map<vec>;
-using matmap = Map<mat>;
-using vec_batch = vector<vec>;
-using batch = pair<vec_batch, vec_batch>;
+using ten0 = Tensor<float, 0>;
 using ten1 = Tensor<float, 1>;
 using ten2 = Tensor<float, 2>;
 using ten3 = Tensor<float, 3>;
 using ten4 = Tensor<float, 4>;
+using vecmap = Map<vec>;
+using matmap = Map<mat>;
+using ten3map = TensorMap<ten3>;
+using vec_batch = vector<vec>;
+using batch = pair<vec_batch, vec_batch>;
 const float INF = 1e8;
 const float EPS = 1e-8;
 
@@ -306,7 +308,6 @@ struct same : public layer {
     }
 };
 //}}}
-
 //{{{ Layer to be trained
 struct linear : public layer {
     const int in_sz, out_sz;
@@ -322,7 +323,7 @@ struct linear : public layer {
         , bias(out_sz)
         , grad_bias(out_sz) {
         bias.setZero();
-        for (auto &i : weight.reshaped()) i = nd(0, 4. / (in_sz + out_sz));
+        for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
     }
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
@@ -446,10 +447,10 @@ struct batchnorm : public layer {
     }
 };
 
-ten3 hi_dim_conv(const ten3 &input, const ten4 &kernel) {
+ten3 hi_dim_conv(const ten3 &input, const ten4 &kernel, ten3 &res) {
     int sz1 = input.dimension(1) - kernel.dimension(2) + 1;
     int sz2 = input.dimension(2) - kernel.dimension(3) + 1;
-    ten3 res(kernel.dimension(1), sz1, sz2);
+    res = ten3(kernel.dimension(1), sz1, sz2);
     res.setZero();
     for (int i = 0; i < kernel.dimension(0); i++)
         for (int j = 0; j < kernel.dimension(1); j++)
@@ -460,8 +461,11 @@ struct conv : public layer {
     const int in_channel, out_channel, in_rows, in_cols;
     const int out_rows, out_cols;
     const int k_rows, k_cols;
-    ten4 kernel;
-    vec bias;
+    ten4 kernel, grad_kernel;
+    vec bias, grad_bias;
+    // 临时存储结果
+    ten3 tensorout;
+    vec tmp_vec;
     conv(int in_channel, int out_channel, int in_rows, int in_cols, int k_rows, int k_cols)
         : layer("conv " + to_string(in_channel) + "channels * " + to_string(in_rows) + " * " + to_string(in_cols) +
                 " -> " + to_string(out_channel) + "channels * " + to_string(in_rows - k_rows + 1) + " * " +
@@ -475,15 +479,56 @@ struct conv : public layer {
         , k_rows(k_rows)
         , k_cols(k_cols)
         , kernel(in_channel, out_channel, k_rows, k_cols)
-        , bias(out_cols) { // 在这里继续写
+        , grad_kernel(in_channel, out_channel, k_rows, k_cols)
+        , bias(out_channel)
+        , grad_bias(out_channel) {
         bias.setZero();
+        for (int i = 0; i < in_channel; i++)
+            for (int j = 0; j < out_channel; j++)
+                for (int k = 0; k < k_rows; k++)
+                    for (int l = 0; l < k_cols; l++) kernel(i, j, k, l) = nd(0, 2. / (in_channel * in_rows * in_cols));
     }
-    void forward(const vec_batch &in) {}
-    void clear_grad() {}
-    void backward(const vec_batch &in, const vec_batch &nxt_grad) {}
-    void upd(optimizer &opt) {}
-    void write(ostream &io) {}
-    void read(istream &io) {}
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++) {
+            tmp_vec = in[i];
+            hi_dim_conv(ten3map(tmp_vec.data(), in_channel, in_rows, in_cols), kernel, tensorout);
+            for (int j = 0; j < out_channel; j++) tensorout.chip(j, 0) += tensorout.constant(bias[j]);
+            out[i] = to_vecmap(tensorout);
+        }
+    }
+    void clear_grad() {
+        grad_bias.setZero();
+        grad_kernel.setZero();
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        for (int i = 0; i < batch_sz; i++) {
+            tmp_vec = nxt_grad[i];
+            ten3map grad_out(tmp_vec.data(), out_channel, out_rows, out_cols);
+            for (int j = 0; j < out_channel; j++) {
+                grad_bias(j) += ten0(grad_out.chip(j, 0).sum())();
+            }
+        }
+        grad_bias /= batch_sz;
+        grad_kernel /= batch_sz;
+    }
+    void upd(optimizer &opt) {
+        opt.upd(to_vecmap(kernel), to_vecmap(grad_kernel));
+        opt.upd(to_vecmap(bias), to_vecmap(grad_bias));
+    }
+    void write(ostream &io) {
+        for (auto &i : bias.reshaped()) io.write((char *)&i, sizeof(i));
+        for (int i = 0; i < in_channel; i++)
+            for (int j = 0; j < out_channel; j++)
+                for (int k = 0; k < k_rows; k++)
+                    for (int l = 0; l < k_cols; l++) io.write((char *)&kernel(i, j, k, l), kernel(i, j, k, l));
+    }
+    void read(istream &io) {
+        for (auto &i : bias.reshaped()) io.read((char *)&i, sizeof(i));
+        for (int i = 0; i < in_channel; i++)
+            for (int j = 0; j < out_channel; j++)
+                for (int k = 0; k < k_rows; k++)
+                    for (int l = 0; l < k_cols; l++) io.read((char *)&kernel(i, j, k, l), kernel(i, j, k, l));
+    }
 };
 //}}}
 //{{{ Layers Sequence
