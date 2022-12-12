@@ -122,8 +122,8 @@ int main() {
         dat.train.first.push_back(make_vec(images[i]));
         dat.train.second.push_back(make_vec(out));
     }
-    adam opt;
-    // nesterov opt(0.01, 0.9, 0.002);
+    // adam opt;
+    nesterov opt(0.01, 0.9, 0.002);
     upd(opt, dat, net, 128, 100000, chk_k, "model.txt");
 
     return 0;

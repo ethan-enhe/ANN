@@ -125,7 +125,7 @@ struct optimizer_holder : public optimizer {
         if (it != V[I].end())
             return it->second;
         else
-            return V[I][x.data()] = vec::Zero(x.rows(), x.cols());
+            return V[I][x.data()] = vec::Zero(x.size());
     }
 };
 
@@ -454,7 +454,7 @@ ten3 hi_dim_conv(const ten3 &input, const ten4 &kernel, ten3 &res) {
     res.setZero();
     for (int i = 0; i < kernel.dimension(0); i++)
         for (int j = 0; j < kernel.dimension(1); j++)
-            res.chip(j, 0) += input.chip(i, 0).convolve(kernel.chip(i, 0).chip(j, 0), std::array<int, 2>{0, 1});
+            res.chip(j, 0) += input.chip(i, 0).convolve(kernel.chip(i, 0).chip(j, 0), Eigen::array<int, 2>{0, 1});
     return res;
 }
 struct conv : public layer {
@@ -509,7 +509,7 @@ struct conv : public layer {
             }
         }
         grad_bias /= batch_sz;
-        grad_kernel /= batch_sz;
+        grad_kernel = grad_kernel / (float)batch_sz;
     }
     void upd(optimizer &opt) {
         opt.upd(to_vecmap(kernel), to_vecmap(grad_kernel));

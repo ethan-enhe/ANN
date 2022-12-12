@@ -36,6 +36,9 @@ ten3 conv(const ten3 &input, const ten4 &kernel) {
 }
 
 int main() {
+    ten3 x(2, 3, 4);
+    x.setRandom();
+    cout << (x * (float)2);
     // ten3 x(2, 2, 2), y(1, 1, 1);
     // ten4 core(2, 1, 2, 2);
     // x.setValues({{{1, 1}, {1, 1}}, {{1, 1}, {1, 1}}});
@@ -44,9 +47,9 @@ int main() {
     // y = conv(x, core);
     // cout << y;
 
-    ten3 x(1, 2, 3);
-    Tensor<float, 0> tmp = (x.chip(0, 0).sum());
-    float a=Tensor<float, 0>(x.chip(0, 0).sum())();
+    // ten3 x(1, 2, 3);
+    // Tensor<float, 0> tmp = (x.chip(0, 0).sum());
+    // float a=Tensor<float, 0>(x.chip(0, 0).sum())();
     // mat x(3, 3); x.resize(3,4);
     // TensorMap<ten3> tmp(x.data(), {4, 1, 3});
     return 0;
