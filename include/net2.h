@@ -31,6 +31,7 @@ const float EPS = 1e-8;
 
 //{{{ Random
 mt19937_64 mr(chrono::system_clock::now().time_since_epoch().count());
+// mt19937_64 mr(65);
 float rd(float l, float r) { return uniform_real_distribution<float>(l, r)(mr); }
 float nd(float l, float r) { return normal_distribution<float>(l, r)(mr); }
 int ri(int l, int r) { return uniform_int_distribution<int>(l, r)(mr); }
@@ -323,7 +324,7 @@ struct linear : public layer {
         , bias(out_sz)
         , grad_bias(out_sz) {
         bias.setZero();
-        for (auto &i : weight.reshaped()) i = nd(0, 2. / in_sz);
+        for (auto &i : weight.reshaped()) i = nd(0, sqrt(2. / in_sz));
     }
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) out[i] = weight * in[i] + bias;
@@ -463,12 +464,9 @@ struct conv : public layer {
     const int k_rows, k_cols;
     ten4 kernel, grad_kernel;
     vec bias, grad_bias;
-    // 临时存储结果
-    ten3 tensorout;
-    vec tmp_vec;
     conv(int in_channel, int out_channel, int in_rows, int in_cols, int k_rows, int k_cols)
-        : layer("conv " + to_string(in_channel) + "channels * " + to_string(in_rows) + " * " + to_string(in_cols) +
-                " -> " + to_string(out_channel) + "channels * " + to_string(in_rows - k_rows + 1) + " * " +
+        : layer("conv " + to_string(in_channel) + " channels * " + to_string(in_rows) + " * " + to_string(in_cols) +
+                " -> " + to_string(out_channel) + " channels * " + to_string(in_rows - k_rows + 1) + " * " +
                 to_string(in_cols - k_cols + 1))
         , in_channel(in_channel)
         , out_channel(out_channel)
@@ -486,13 +484,16 @@ struct conv : public layer {
         for (int i = 0; i < in_channel; i++)
             for (int j = 0; j < out_channel; j++)
                 for (int k = 0; k < k_rows; k++)
-                    for (int l = 0; l < k_cols; l++) kernel(i, j, k, l) = nd(0, 2. / (in_channel * in_rows * in_cols));
+                    for (int l = 0; l < k_cols; l++)
+                        kernel(i, j, k, l) = nd(0, sqrt(2. / (in_channel * in_rows * in_cols)));
     }
     void forward(const vec_batch &in) {
         for (int i = 0; i < batch_sz; i++) {
-            tmp_vec = in[i];
+            vec tmp_vec = in[i];
+            ten3 tensorout;
             hi_dim_conv(ten3map(tmp_vec.data(), in_channel, in_rows, in_cols), kernel, tensorout);
-            for (int j = 0; j < out_channel; j++) tensorout.chip(j, 0) += tensorout.constant(bias[j]);
+            // assert(0);
+            for (int j = 0; j < out_channel; j++) tensorout.chip(j, 0) = tensorout.chip(j, 0) + bias[j];
             out[i] = to_vecmap(tensorout);
         }
     }
@@ -502,10 +503,24 @@ struct conv : public layer {
     }
     void backward(const vec_batch &in, const vec_batch &nxt_grad) {
         for (int i = 0; i < batch_sz; i++) {
-            tmp_vec = nxt_grad[i];
-            ten3map grad_out(tmp_vec.data(), out_channel, out_rows, out_cols);
+            vec _nxt_grad = nxt_grad[i], _in = in[i];
+            grad[i].resize(in[0].size());
+            ten3map grad_out(_nxt_grad.data(), out_channel, out_rows, out_cols);
+            ten3map grad_in(grad[i].data(), in_channel, in_rows, in_cols);
+            ten3map in_map(_in.data(), in_channel, in_rows, in_cols);
+            grad_in.setZero();
             for (int j = 0; j < out_channel; j++) {
                 grad_bias(j) += ten0(grad_out.chip(j, 0).sum())();
+                for (int k = 0; k < in_channel; k++) {
+                    // 转180°的卷积核
+                    ten2 rot_kernel = kernel.chip(k, 0).chip(j, 0).reverse(Eigen::array<bool, 2>{true, true});
+                    ten2 in_ten = grad_out.chip(j, 0).pad(Eigen::array<pair<int, int>, 2>{
+                        pair<int, int>{k_rows - 1, k_rows - 1}, pair<int, int>{k_cols - 1, k_cols - 1}});
+                    grad_in.chip(k, 0) += in_ten.convolve(rot_kernel, Eigen::array<int, 2>{0, 1});
+                    // (i,j)--(k,l)-->(i-k,j-l)
+                    grad_kernel.chip(k, 0).chip(j, 0) +=
+                        in_map.chip(k, 0).convolve(grad_out.chip(j, 0), Eigen::array<int, 2>{0, 1});
+                }
             }
         }
         grad_bias /= batch_sz;
@@ -520,16 +535,77 @@ struct conv : public layer {
         for (int i = 0; i < in_channel; i++)
             for (int j = 0; j < out_channel; j++)
                 for (int k = 0; k < k_rows; k++)
-                    for (int l = 0; l < k_cols; l++) io.write((char *)&kernel(i, j, k, l), kernel(i, j, k, l));
+                    for (int l = 0; l < k_cols; l++) io.write((char *)&kernel(i, j, k, l), sizeof(kernel(i, j, k, l)));
     }
     void read(istream &io) {
         for (auto &i : bias.reshaped()) io.read((char *)&i, sizeof(i));
         for (int i = 0; i < in_channel; i++)
             for (int j = 0; j < out_channel; j++)
                 for (int k = 0; k < k_rows; k++)
-                    for (int l = 0; l < k_cols; l++) io.read((char *)&kernel(i, j, k, l), kernel(i, j, k, l));
+                    for (int l = 0; l < k_cols; l++) io.read((char *)&kernel(i, j, k, l), sizeof(kernel(i, j, k, l)));
     }
 };
+
+//}}}
+//{{{ pooling
+
+struct maxpool2x2 : public layer {
+    const int in_channel, in_rows, in_cols;
+    vector<Tensor<int, 3>> from;
+    maxpool2x2(int in_channel, int in_rows, int in_cols)
+        : layer("maxpool2x2"), in_channel(in_channel), in_rows(in_rows), in_cols(in_cols) {
+        assert(in_rows % 2 == 0 && in_cols % 2 == 0);
+    }
+    void _resize(int new_batch_sz) { from.resize(new_batch_sz); }
+    void forward(const vec_batch &in) {
+        for (int i = 0; i < batch_sz; i++) {
+            vec in_vec = in[i];
+            ten3map in_ten(in_vec.data(), in_channel, in_rows, in_cols);
+            ten3 res(in_channel, in_rows / 2, in_cols / 2);
+            from[i] = Tensor<int, 3>(in_channel, in_rows / 2, in_cols / 2);
+            for (int j = 0; j < in_channel; j++) {
+                for (int k = 0; k < in_rows / 2; k++)
+                    for (int l = 0; l < in_cols / 2; l++) {
+                        res(j, k, l) = -INF;
+                        if (res(j, k, l) < in_ten(j, k * 2, l * 2)) {
+                            res(j, k, l) = in_ten(j, k * 2, l * 2);
+                            from[i](j, k, l) = 0;
+                        }
+                        if (res(j, k, l) < in_ten(j, k * 2, l * 2 + 1)) {
+                            res(j, k, l) = in_ten(j, k * 2, l * 2 + 1);
+                            from[i](j, k, l) = 1;
+                        }
+                        if (res(j, k, l) < in_ten(j, k * 2 + 1, l * 2)) {
+                            res(j, k, l) = in_ten(j, k * 2 + 1, l * 2);
+                            from[i](j, k, l) = 2;
+                        }
+                        if (res(j, k, l) < in_ten(j, k * 2 + 1, l * 2 + 1)) {
+                            res(j, k, l) = in_ten(j, k * 2 + 1, l * 2 + 1);
+                            from[i](j, k, l) = 3;
+                        }
+                    }
+            }
+            out[i] = to_vecmap(res);
+        }
+    }
+    void backward(const vec_batch &in, const vec_batch &nxt_grad) {
+        for (int i = 0; i < batch_sz; i++) {
+            vec nxt_vec = nxt_grad[i];
+            ten3map nxt_ten(nxt_vec.data(), in_channel, in_rows / 2, in_cols / 2);
+            ten3 res(in_channel, in_rows, in_cols);
+            res.setZero();
+            for (int j = 0; j < in_channel; j++) {
+                for (int k = 0; k < in_rows / 2; k++)
+                    for (int l = 0; l < in_cols / 2; l++) {
+                        int &cur = from[i](j, k, l);
+                        res(j, k * 2 + (cur >> 1), l * 2 + (cur & 1)) = nxt_ten(j, k, l);
+                    }
+            }
+            grad[i] = to_vecmap(res);
+        }
+    }
+};
+
 //}}}
 //{{{ Layers Sequence
 struct net {
@@ -646,7 +722,7 @@ void upd(optimizer &opt, const data_set &data, net &net, int batch_sz, int epoch
         net.upd(opt, tmp);
         mult *= 0.9;
         tloss = tloss * 0.9 + err_func(net.out(), tmp.second) * 0.1;
-        if (i % 1000 == 0) {
+        if (i % 50 == 0) {
             cerr << "-------------------------" << endl;
             cerr << "Time elapse: " << (float)(clock() - t0) / CLOCKS_PER_SEC << endl;
             cerr << "Epoch: " << i << endl;

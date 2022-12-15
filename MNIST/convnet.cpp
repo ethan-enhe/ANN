@@ -1,6 +1,6 @@
-#include "../include/net2.h"
-
 #include <bits/stdc++.h>
+
+#include "../include/net2.h"
 
 using namespace std;
 
@@ -79,21 +79,24 @@ vector<double> pool(const vector<double>& x) {
 sequential net;
 data_set dat;
 int main() {
-    net.add(make_shared<linear>(28 * 28, 300));
-    net.add(make_shared<batchnorm>(300));
+    net.add(make_shared<conv>(1, 32, 28, 28, 3, 3));
+    net.add(make_shared<relu>());
+
+    net.add(make_shared<conv>(32, 64, 26, 26, 3, 3));
+    net.add(make_shared<relu>());
+
+    net.add(make_shared<maxpool2x2>(64, 24, 24));
 
     net.add(make_shared<relu>());
-    net.add(make_shared<linear>(300, 128));
+    net.add(make_shared<batchnorm>(64 * 12 * 12));
+    net.add(make_shared<linear>(64 * 12 * 12, 128));
 
     net.add(make_shared<relu>());
     net.add(make_shared<batchnorm>(128));
-    net.add(make_shared<linear>(128, 64));
-
-    net.add(make_shared<relu>());
-    net.add(make_shared<linear>(64, 10));
+    net.add(make_shared<linear>(128, 10));
 
     net.add(make_shared<softmax>());
-    net.readf("./model.txt");
+    net.readf("model.txt");
     net.set_train_mode(0);
     cerr << net.shape();
 
@@ -112,9 +115,6 @@ int main() {
         dat.valid.first.push_back(make_vec(_images[i]));
         dat.valid.second.push_back(make_vec(out));
         cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
-        if (i <= 10) {
-            cout << net.out()[0] << endl << endl;
-        }
     };
     cout << cnt / _images.size() << endl;
     net.set_train_mode(1);
