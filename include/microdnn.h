@@ -1,5 +1,5 @@
-#ifndef NET_H
-#define NET_H
+#ifndef MICRODNN_H
+#define MICRODNN_H
 
 #define NDEBUG
 #pragma GCC optimize("O3,unroll-loops")
