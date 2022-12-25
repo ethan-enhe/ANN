@@ -1,6 +1,6 @@
-#include "../include/net2.h"
-
 #include <bits/stdc++.h>
+
+#include "../include/microdnn.h"
 
 using namespace std;
 
@@ -77,7 +77,6 @@ vector<double> pool(const vector<double>& x) {
 }
 
 sequential net;
-data_set dat;
 int main() {
     net.add(make_shared<linear>(28 * 28, 300));
     net.add(make_shared<batchnorm>(300));
@@ -93,7 +92,9 @@ int main() {
     net.add(make_shared<linear>(64, 10));
 
     net.add(make_shared<softmax>());
-    net.readf("./model.txt");
+
+
+    net.readf("model_acc98.71.txt");
     net.set_train_mode(0);
     cerr << net.shape();
 
@@ -104,6 +105,7 @@ int main() {
     read_Mnist_Images("./train-images.idx3-ubyte", images);
     read_Mnist_Images("./t10k-images.idx3-ubyte", _images);
 
+data_set dat;
     double cnt = 0;
     net.set_train_mode(0);
     for (int i = 0; i < (int)_images.size(); i++) {
@@ -111,12 +113,18 @@ int main() {
         out[_labels[i]] = 1;
         dat.valid.first.push_back(make_vec(_images[i]));
         dat.valid.second.push_back(make_vec(out));
-        cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
-        if (i <= 10) {
-            cout << net.out()[0] << endl << endl;
-        }
+        // cnt += chk_k(net.forward({make_vec(_images[i])}), {make_vec(out)});
     };
-    cout << cnt / _images.size() << endl;
+    // cout << cnt / _images.size() << endl;
+    // freopen("data.out", "w", stdout);
+    // while (1) {
+    //     int id = 0;
+    //     cin >> id;
+    //     id = ri(0, dat.valid.first.size() - 1);
+    //     for (int i = 0; i < 28; i++, putchar('\n'))
+    //         for (int j = 0; j < 28; j++) printf("%4d ", (int)dat.valid.first[id](i * 28 + j));
+    //     putchar('\n');
+    // }
     net.set_train_mode(1);
 
     for (int i = 0; i < (int)images.size(); i++) {
@@ -125,7 +133,7 @@ int main() {
         dat.train.first.push_back(make_vec(images[i]));
         dat.train.second.push_back(make_vec(out));
     }
-    // adam opt;
+
     nesterov opt(0.01, 0.9);
     upd(opt, dat, net, 64, 100000, chk_k, "model.txt");
 

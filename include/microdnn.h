@@ -492,7 +492,6 @@ struct conv : public layer {
             vec tmp_vec = in[i];
             ten3 tensorout;
             hi_dim_conv(ten3map(tmp_vec.data(), in_channel, in_rows, in_cols), kernel, tensorout);
-            // assert(0);
             for (int j = 0; j < out_channel; j++) tensorout.chip(j, 0) = tensorout.chip(j, 0) + bias[j];
             out[i] = to_vecmap(tensorout);
         }
